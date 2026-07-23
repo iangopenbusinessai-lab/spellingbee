@@ -62,10 +62,18 @@ interface GameState {
 
 ## Current state
 Singleplayer is complete and deployed: difficulty select → timed word round
-with spoken pronunciation → scoring/streak tracking → results screen. No
-backend exists yet. Multiplayer (Supabase realtime + edge function answer
-validation) is planned but not started — the roadmap for that is tracked
-outside this file, not here.
+with spoken pronunciation → scoring/streak tracking → results screen.
+
+The multiplayer backend schema is live and verified (Sessions 7 / 7b). A real
+Supabase project holds the `words`, `rooms`, `room_players`, and
+`round_results` tables with RLS enforced; the migrations live in `supabase/`
+and were applied via `supabase db push`. Verified against the live project:
+anonymous sign-in works, `words` is seeded with all 120 words (30 per tier),
+and the write-protection policies hold — clients cannot directly change
+`rooms.status` or `room_players.score`, and `get_room_by_code()` leaks no
+`host_id`. No application code touches Supabase yet — the multiplayer client
+wiring (auth, room create/join, realtime) is the next step, followed by
+edge-function answer validation and server-authoritative score/status writes.
 
 ## Naming note
 Local dev folder/npm package name may still say "spelling-race" from

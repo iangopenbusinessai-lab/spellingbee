@@ -20,3 +20,14 @@ export interface GameState {
   timeLeft: number;
   wordsRemaining: number;
 }
+
+// Public surface of the game-engine hook. Any future hook (e.g.
+// useMultiplayerGame) must satisfy this exact shape to be a drop-in
+// replacement for useGameEngine in App.tsx.
+export interface GameEngineApi {
+  state: GameState;
+  startGame: (tier: DifficultyTier) => void;
+  submitGuess: (guess: string) => void;
+  skipWord: () => void;
+  resetToMenu: () => void;
+}

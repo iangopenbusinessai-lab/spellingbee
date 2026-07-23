@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { DifficultyTier, GameState, WordEntry } from "../types";
+import type { DifficultyTier, GameEngineApi, GameState, WordEntry } from "../types";
 import { wordsForTier } from "../data/words";
 import { speakWord } from "../lib/tts";
 
@@ -38,7 +38,7 @@ const initialState: GameState = {
   wordsRemaining: 0,
 };
 
-export function useGameEngine() {
+export function useGameEngine(): GameEngineApi {
   const [state, setState] = useState<GameState>(initialState);
   const queueRef = useRef<WordEntry[]>([]);
   const timerRef = useRef<number | null>(null);

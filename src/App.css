@@ -225,3 +225,283 @@
   font-size: 13px;
   text-decoration: underline;
 }
+
+/* Mode select */
+.mode-select {
+  text-align: center;
+  max-width: 480px;
+}
+
+.mode-select h1 {
+  font-family: var(--font-display);
+  font-size: 40px;
+  font-weight: 700;
+  margin: 0;
+  color: var(--honey);
+}
+
+.mode-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.mode-card {
+  background: var(--surface);
+  border: 1px solid #3a3226;
+  border-radius: 10px;
+  padding: 24px 18px;
+  text-align: left;
+  transition: border-color 0.15s ease, transform 0.1s ease;
+}
+
+.mode-card:hover {
+  border-color: var(--honey);
+  transform: translateY(-2px);
+}
+
+.mode-title {
+  display: block;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 18px;
+  color: var(--cream);
+}
+
+.mode-blurb {
+  display: block;
+  font-size: 13px;
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+/* Shared back link (singleplayer home + lobby) */
+.back-link {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 13px;
+  padding: 6px 0;
+  margin-bottom: 12px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+}
+
+.back-link:hover {
+  color: var(--honey);
+}
+
+.sp-home {
+  text-align: center;
+}
+
+/* Lobby */
+.lobby {
+  width: 100%;
+  max-width: 440px;
+}
+
+.lobby h2,
+.waiting-room h2 {
+  font-family: var(--font-display);
+  color: var(--honey);
+  margin-top: 0;
+}
+
+.lobby h3 {
+  font-family: var(--font-display);
+  font-size: 16px;
+  color: var(--cream);
+  margin: 0 0 12px;
+}
+
+.lobby-status,
+.lobby-error {
+  color: var(--muted);
+}
+
+.lobby-error {
+  color: var(--bad);
+  margin-top: 16px;
+}
+
+.field {
+  display: block;
+  margin-bottom: 14px;
+  text-align: left;
+}
+
+.field-label {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 6px;
+}
+
+.text-input {
+  width: 100%;
+  font-size: 16px;
+  padding: 12px;
+  border-radius: 8px;
+  border: 2px solid #3a3226;
+  background: var(--bg);
+  color: var(--cream);
+  outline: none;
+}
+
+.text-input:focus {
+  border-color: var(--honey);
+}
+
+.code-input {
+  font-family: var(--font-display);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  text-align: center;
+}
+
+.lobby-panel {
+  background: var(--surface);
+  border: 1px solid #3a3226;
+  border-radius: 12px;
+  padding: 18px;
+  margin-bottom: 12px;
+}
+
+.lobby-panel .primary-btn {
+  width: 100%;
+}
+
+.lobby-divider {
+  text-align: center;
+  color: var(--muted);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin: 8px 0;
+}
+
+.hint {
+  color: var(--muted);
+  font-size: 13px;
+  margin-top: 12px;
+  text-align: center;
+}
+
+/* Waiting room */
+.room-code-block {
+  background: var(--surface);
+  border: 1px solid #3a3226;
+  border-radius: 12px;
+  padding: 20px;
+  text-align: center;
+  margin-bottom: 18px;
+}
+
+.room-code-label {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.room-code {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 40px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  color: var(--honey);
+  margin: 8px 0 4px;
+}
+
+.room-tier {
+  display: block;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.player-list {
+  margin-bottom: 18px;
+}
+
+.player-list-label {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 8px;
+}
+
+.player-list ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.player-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid #3a3226;
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin-bottom: 8px;
+}
+
+.player-name {
+  color: var(--cream);
+  font-size: 15px;
+}
+
+.player-tags {
+  display: flex;
+  gap: 6px;
+}
+
+.tag {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+
+.tag-host {
+  background: var(--honey-dark);
+  color: var(--cream);
+}
+
+.tag-you {
+  border: 1px solid var(--muted);
+  color: var(--muted);
+}
+
+.player-empty {
+  color: var(--muted);
+  font-size: 14px;
+  padding: 12px 0;
+}
+
+.host-controls .primary-btn {
+  width: 100%;
+}
+
+.host-controls .primary-btn:disabled {
+  opacity: 0.5;
+}
+
+.start-msg {
+  color: var(--bad);
+  font-size: 13px;
+  margin-top: 12px;
+  line-height: 1.5;
+  word-break: break-word;
+}

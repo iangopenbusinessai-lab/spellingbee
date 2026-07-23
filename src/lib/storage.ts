@@ -20,3 +20,15 @@ export function getAllBests(): Record<DifficultyTier, number> {
     expert: getBest("expert"),
   };
 }
+
+// Remembered display name for multiplayer, so returning players don't retype it.
+// Stored as room_players.display_name when they create/join a room.
+const DISPLAY_NAME_KEY = "spellingbee:displayName";
+
+export function getDisplayName(): string {
+  return localStorage.getItem(DISPLAY_NAME_KEY) ?? "";
+}
+
+export function setDisplayName(name: string): void {
+  localStorage.setItem(DISPLAY_NAME_KEY, name);
+}

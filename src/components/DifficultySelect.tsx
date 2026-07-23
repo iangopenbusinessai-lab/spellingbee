@@ -7,7 +7,13 @@ const TIERS: { id: DifficultyTier; label: string; blurb: string }[] = [
   { id: "expert", label: "Expert", blurb: "Competition-level" },
 ];
 
-export function DifficultySelect({ onSelect }: { onSelect: (tier: DifficultyTier) => void }) {
+export function DifficultySelect({
+  bests,
+  onSelect,
+}: {
+  bests: Record<DifficultyTier, number>;
+  onSelect: (tier: DifficultyTier) => void;
+}) {
   return (
     <div className="tier-select">
       <h1>Spelling race</h1>
@@ -17,6 +23,7 @@ export function DifficultySelect({ onSelect }: { onSelect: (tier: DifficultyTier
           <button key={t.id} className="tier-card" onClick={() => onSelect(t.id)}>
             <span className="tier-label">{t.label}</span>
             <span className="tier-blurb">{t.blurb}</span>
+            <span className="tier-best">Best: {bests[t.id]}</span>
           </button>
         ))}
       </div>

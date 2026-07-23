@@ -14,6 +14,10 @@ const ROUND_SECONDS: Record<DifficultyTier, number> = {
 
 const FEEDBACK_DELAY_MS = 1100;
 
+function checkAnswer(word: WordEntry, guess: string): boolean {
+  return guess.trim().toLowerCase() === word.word.toLowerCase();
+}
+
 function shuffle<T>(arr: T[]): T[] {
   const copy = [...arr];
   for (let i = copy.length - 1; i > 0; i--) {
@@ -78,7 +82,7 @@ export function useGameEngine() {
     (guess: string) => {
       setState((s) => {
         if (s.status !== "playing" || !s.currentWord) return s;
-        const correct = guess.trim().toLowerCase() === s.currentWord.word.toLowerCase();
+        const correct = checkAnswer(s.currentWord, guess);
         const streak = correct ? s.streak + 1 : 0;
         const points = correct ? 10 + Math.max(0, s.timeLeft) : 0;
         return {

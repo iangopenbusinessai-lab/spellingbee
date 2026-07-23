@@ -20,6 +20,10 @@ export function RoundScreen({
     inputRef.current?.focus();
   }, [state.currentWord?.id]);
 
+  const scrollInputIntoView = () => {
+    inputRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+  };
+
   if (!state.currentWord) return null;
 
   const feedback =
@@ -53,8 +57,11 @@ export function RoundScreen({
           className={`guess-input ${feedback ?? ""}`}
           value={guess}
           onChange={(e) => setGuess(e.target.value)}
+          onFocus={scrollInputIntoView}
           disabled={state.status !== "playing"}
           autoComplete="off"
+          autoCapitalize="off"
+          autoCorrect="off"
           spellCheck={false}
           placeholder="Type the word you hear"
         />

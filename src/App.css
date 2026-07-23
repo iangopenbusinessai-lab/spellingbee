@@ -1,9 +1,17 @@
 .app-shell {
   min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 24px;
+}
+
+@media (max-width: 600px) {
+  .app-shell {
+    align-items: flex-start;
+    padding-top: 32px;
+  }
 }
 
 /* Difficulty select */
@@ -119,6 +127,10 @@
   border-radius: 20px;
   padding: 6px 16px;
   font-size: 13px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .replay-btn:hover {
@@ -165,6 +177,11 @@
   color: var(--muted);
   font-size: 13px;
   text-decoration: underline;
+  min-height: 44px;
+  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 /* Results screen */

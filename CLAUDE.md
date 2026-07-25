@@ -71,9 +71,26 @@ and were applied via `supabase db push`. Verified against the live project:
 anonymous sign-in works, `words` is seeded with all 120 words (30 per tier),
 and the write-protection policies hold — clients cannot directly change
 `rooms.status` or `room_players.score`, and `get_room_by_code()` leaks no
-`host_id`. No application code touches Supabase yet — the multiplayer client
-wiring (auth, room create/join, realtime) is the next step, followed by
-edge-function answer validation and server-authoritative score/status writes.
+`host_id`.
+
+The multiplayer **lobby** is wired up (Session 8) and runs alongside
+singleplayer, which is untouched. `src/lib/supabaseClient.ts` exports the one
+client (env vars only, never hardcoded); `useSupabaseUser` signs the visitor in
+anonymously once per load using supabase-js's default session persistence.
+`src/lib/rooms.ts` is the only place that talks to the room tables — create,
+join-by-code via `get_room_by_code()`, self-leave, and a Realtime subscription
+to `room_players`. Lobby cap is `PLAYER_CAP = 8`, enforced best-effort on the
+client (join-then-back-out); race-free enforcement is the edge function's job.
+Migrations `0004_realtime.sql` (adds `room_players` to the realtime publication)
+and `0005_self_leave.sql` (a player may DELETE only their own row, only while
+`status='lobby'`) were applied via `supabase db push`.
+
+Still to do (Session 9): `rooms.status` is server-authoritative and direct
+client writes are correctly blocked by RLS — `startGame()` in `src/lib/rooms.ts`
+is a deliberate STUB that surfaces the RLS rejection instead of faking success.
+Do not "fix" it with a permissive policy; implement the `start-game` edge
+function. Then edge-function answer validation, server-side score/status
+writes, and the multiplayer round/scoring hook.
 
 ## Naming note
 Local dev folder/npm package name may still say "spelling-race" from

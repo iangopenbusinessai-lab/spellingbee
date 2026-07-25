@@ -85,12 +85,32 @@ Migrations `0004_realtime.sql` (adds `room_players` to the realtime publication)
 and `0005_self_leave.sql` (a player may DELETE only their own row, only while
 `status='lobby'`) were applied via `supabase db push`.
 
-Still to do (Session 9): `rooms.status` is server-authoritative and direct
-client writes are correctly blocked by RLS — `startGame()` in `src/lib/rooms.ts`
-is a deliberate STUB that surfaces the RLS rejection instead of faking success.
-Do not "fix" it with a permissive policy; implement the `start-game` edge
-function. Then edge-function answer validation, server-side score/status
-writes, and the multiplayer round/scoring hook.
+The **server-authoritative round engine** is live (Session 9a). Migration
+`0006_round_engine.sql` adds `rooms.round_started_at`, the `round_attempts`
+audit table, and three plpgsql transition functions; three edge functions
+(`start-game`, `submit-answer`, `advance-round`) are deployed. Verified against
+the live project by `supabase/scripts/verify_functions.mjs` and
+`verify_race.mjs`.
+
+Rules this engine must keep:
+- Game logic lives in the plpgsql functions in `0006`, NOT in the edge
+  functions, because each transition is multi-statement and contended and a
+  plpgsql function is a single transaction. Edge functions do auth + HTTP only.
+- `start_game_tx` / `submit_answer_tx` / `advance_round_tx` take the acting
+  player as a parameter, so they are granted to `service_role` ONLY. Never
+  grant them to `authenticated` — that would let any client impersonate anyone.
+- `submit-answer` accepts no client-supplied correctness or timing. Response
+  time is measured from `rooms.round_started_at` to server receipt. Don't add a
+  client-time parameter "for accuracy".
+- The winner is claimed by a conditional `UPDATE ... WHERE winner_id IS NULL`.
+  Don't refactor that into a read-then-write.
+- `ROUND_SECONDS` in `useGameEngine.ts` and `public.round_seconds()` must stay
+  in sync — the client renders the countdown, the server enforces it.
+
+Still to do (Session 9b): no `src/` code calls these functions yet.
+`startGame()` in `src/lib/rooms.ts` is still the STUB that surfaces the RLS
+rejection — it needs to call the `start-game` edge function instead. Then the
+multiplayer round/scoring hook and UI.
 
 ## Naming note
 Local dev folder/npm package name may still say "spelling-race" from

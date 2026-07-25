@@ -16,10 +16,59 @@ supabase/
     0001_schema.sql        tables: words, rooms, room_players, round_results
     0002_rls.sql           RLS policies, column grants, security-definer helpers
     0003_seed_words.sql    the 120-word bank (generated, do not hand-edit)
+    0004_realtime.sql      adds room_players to the realtime publication
+    0005_self_leave.sql    a player may delete only their own lobby row
+    0006_round_engine.sql  round state + the atomic game-transition functions
+  functions/
+    _shared/mod.ts         auth + RPC plumbing (zero dependencies)
+    start-game/            host-only lobby -> active
+    submit-answer/         server-side correctness, timing and scoring
+    advance-round/         the single "round over -> next word" path
   scripts/
     gen_seed.mjs           regenerates 0003 from src/data/words.ts
+    verify.mjs             schema/RLS checks (Session 7b)
+    verify_functions.mjs   edge-function authorization + anti-cheat checks
+    verify_race.mjs        8-way winner race + server-clock timeout
   README.md
 ```
+
+### Server authority (Session 9a)
+
+Rounds are server-authoritative. What that guarantees is deliberately narrow:
+
+1. **A word is revealed only once its round has started.** The word for round N
+   is written to `round_results` in the same transaction that bumps
+   `rooms.current_round`, so a future round's word does not exist in any
+   client-readable row yet. Once a round *has* started the client necessarily
+   receives the text — it has to pronounce it via the Web Speech API. That
+   exposure is an accepted property of the design, the same as a pre-recorded
+   audio file would have, and is not something these functions try to hide.
+2. **Correctness, timing and the round winner come from the server.**
+   `submit-answer` accepts no "correct" flag and no client-reported duration;
+   it looks the word up itself and measures from `rooms.round_started_at` to
+   the server's receipt of the call. Editing the client JS cannot award points
+   or fake a fast time.
+
+The game logic lives in plpgsql (`0006`) rather than in the edge functions
+because every transition is multi-statement *and* contended — two correct
+answers can land in the same millisecond. A plpgsql function is one
+transaction, so the conditional winner claim and the writes that follow it are
+atomic together. The edge functions do authentication and HTTP; the SQL
+functions do the state transition.
+
+Those SQL functions take the acting player as a parameter, so they are granted
+to `service_role` **only** — a client token calling them directly gets
+`42501 permission denied`, which `verify_functions.mjs` asserts.
+
+Deploy them with:
+
+```bash
+npx supabase functions deploy start-game submit-answer advance-round --use-api
+```
+
+`--use-api` bundles server-side, so no local Docker is needed. The
+`service_role` key is injected by the platform as `SUPABASE_SERVICE_ROLE_KEY`
+and is never committed or shipped to a browser.
 
 ### Identity model
 

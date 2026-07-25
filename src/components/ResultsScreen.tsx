@@ -1,3 +1,5 @@
+import { RotateCcw, Trophy } from "lucide-react";
+
 export function ResultsScreen({
   score,
   bestStreak,
@@ -14,7 +16,10 @@ export function ResultsScreen({
   const isNewBest = score >= best && score > 0;
   return (
     <div className="results-screen">
-      <h2>Round complete</h2>
+      <h2>
+        <Trophy size={22} aria-hidden />
+        Round complete
+      </h2>
       <div className="results-stats">
         <div className="stat">
           <span className="stat-value">{score}</span>
@@ -31,6 +36,7 @@ export function ResultsScreen({
       </p>
       <div className="results-actions">
         <button className="primary-btn" onClick={onReplay}>
+          <RotateCcw size={16} aria-hidden />
           Play again
         </button>
         <button className="ghost-btn" onClick={onMenu}>

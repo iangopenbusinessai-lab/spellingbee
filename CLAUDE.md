@@ -40,6 +40,14 @@ Deploys via `.github/workflows/deploy.yml` on every push to `main`
 - No component may assume there is exactly one player in a way that's hard
   to reverse later (e.g. hardcoded "your score" logic that can't extend to
   multiple players' scores once multiplayer exists).
+- Every colour comes from a CSS custom property defined in `src/index.css`.
+  Never hardcode a hex value in `App.css` or a component — the app ships a
+  light and a dark theme, and a literal colour is invisible in one of them.
+  Adding a token means adding it to BOTH palettes in the same edit.
+- `src/lib/theme.ts` is the only place that reads or writes the theme. The
+  stored value is `"light" | "dark" | null`, where null means "follow the OS";
+  only an explicit toggle writes, so a player who never touches it keeps
+  tracking their system setting.
 
 ## Core types (do not change without updating this file)
 ```ts
@@ -169,6 +177,36 @@ rejects any call whose expected round no longer matches, so at most one caller
 can ever advance a given round (verified with 6 concurrent client calls per
 round racing the sweeper — exactly one winner each time, contiguous rounds, no
 errors).
+
+The UI was **redesigned around the bee/honeycomb concept** (Session 12). This
+was a presentation-only change: `src/hooks/`, `src/types.ts`, `src/lib/rooms.ts`
+and `src/lib/tts.ts` were not touched, and `checkAnswer`/`GameEngineApi` are
+unchanged. Icons come from `lucide-react` (the lighter install of the two
+candidates; +5.2 kB raw / +2.0 kB gzip for 8 icons, so it tree-shakes). No emoji
+are used as UI any more.
+
+Rules this redesign must keep:
+- The tier cards' `clip-path` hexagon IS the tap target — browsers hit-test
+  against the clipped shape, not the layout box. So `getBoundingClientRect`
+  alone OVERSTATES the target and is not a sufficient check; measure the
+  inscribed area with `elementFromPoint` probes. Measured live: 90px inscribed
+  square at 380px viewport, 84px at 320px, against a 44px floor.
+- `.tier-card` needs both `width: 100%` (form controls resolve `normal` grid
+  alignment to `start`, not `stretch`, so a bare button won't fill its column)
+  and `min-width: 0` (otherwise the blurb's min-content width floors the grid
+  and it silently eats the shell's padding on narrow phones). Both were real
+  bugs caught by measuring.
+- A `clip-path` also clips borders, outlines and box-shadows, so the hex rim is
+  an inset `::before` and `:focus-visible` thickens that rim. Don't "fix" focus
+  by adding an outline — it will not be visible.
+- All motion is decoration on top of a state that is already visible without it
+  (a coloured border, a number changing). That is what makes the single global
+  `prefers-reduced-motion: reduce` block in `index.css` safe: it can switch
+  everything off without hiding information. Keep new animations inside that
+  guarantee rather than adding per-rule opt-outs.
+- The streak pulse re-triggers by REMOUNTING the span via a changing `key`.
+  A CSS animation does not replay on a re-render, only on a remount. It fires
+  on an increase only — a streak reset deliberately doesn't animate.
 
 ## Naming note
 Local dev folder/npm package name may still say "spelling-race" from

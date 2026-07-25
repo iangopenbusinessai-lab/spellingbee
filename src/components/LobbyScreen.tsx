@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { ArrowLeft } from "lucide-react";
 import type { DifficultyTier } from "../types";
 import { useSupabaseUser } from "../hooks/useSupabaseUser";
 import { getDisplayName, setDisplayName as persistDisplayName } from "../lib/storage";
@@ -70,7 +71,10 @@ export function LobbyScreen({
   if (authError || !userId) {
     return (
       <div className="lobby">
-        <button className="back-link" onClick={onExitToModes}>← Modes</button>
+        <button className="back-link" onClick={onExitToModes}>
+          <ArrowLeft size={15} aria-hidden />
+          Modes
+        </button>
         <p className="lobby-error">Couldn't sign in: {authError ?? "unknown error"}</p>
       </div>
     );
@@ -78,7 +82,10 @@ export function LobbyScreen({
 
   return (
     <div className="lobby">
-      <button className="back-link" onClick={onExitToModes}>← Modes</button>
+      <button className="back-link" onClick={onExitToModes}>
+        <ArrowLeft size={15} aria-hidden />
+        Modes
+      </button>
       <h2>Multiplayer</h2>
 
       <label className="field">

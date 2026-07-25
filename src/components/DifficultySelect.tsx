@@ -21,7 +21,12 @@ export function DifficultySelect({
       <p className="subtitle">Hear it. Spell it. Beat the clock.</p>
       <div className="tier-grid">
         {TIERS.map((t) => (
-          <button key={t.id} className="tier-card" onClick={() => onSelect(t.id)}>
+          <button
+            key={t.id}
+            className="tier-card"
+            data-tier={t.id}
+            onClick={() => onSelect(t.id)}
+          >
             <span className="tier-label">{t.label}</span>
             <span className="tier-blurb">{t.blurb}</span>
             <span className="tier-best">Best: {bests[t.id]}</span>

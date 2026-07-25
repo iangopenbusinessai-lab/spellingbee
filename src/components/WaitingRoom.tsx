@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { ArrowLeft } from "lucide-react";
 import { getSupabase } from "../lib/supabaseClient";
 import {
   fetchPlayers,
@@ -82,7 +83,8 @@ export function WaitingRoom({
   return (
     <div className="waiting-room">
       <button className="back-link" onClick={onLeave}>
-        ← Leave room
+        <ArrowLeft size={15} aria-hidden />
+        Leave room
       </button>
 
       <h2>Waiting room</h2>

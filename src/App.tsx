@@ -1,6 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import { ArrowLeft } from "lucide-react";
 import "./App.css";
 import { ModeSelect } from "./components/ModeSelect";
+import { ThemeToggle } from "./components/ThemeToggle";
 import { DifficultySelect } from "./components/DifficultySelect";
 import { RoundScreen } from "./components/RoundScreen";
 import { ResultsScreen } from "./components/ResultsScreen";
@@ -16,6 +18,19 @@ import { leaveRoom, type RoomInfo } from "./lib/rooms";
 // (untouched); "multi" = the new lobby. Additive — singleplayer's idle/playing/
 // finished states are unchanged.
 type Mode = "single" | "multi" | null;
+
+// Presentational wrapper around what used to be a bare <div className="app-shell">.
+// It exists so the theme toggle is mounted once for every screen — mode select,
+// lobby, waiting room, round and results — instead of being pasted into each of
+// App's four return branches and drifting apart later.
+function Shell({ children }: { children: ReactNode }) {
+  return (
+    <div className="app-shell">
+      <ThemeToggle />
+      {children}
+    </div>
+  );
+}
 
 function App() {
   const [mode, setMode] = useState<Mode>(null);
@@ -55,9 +70,9 @@ function App() {
 
   if (mode === null) {
     return (
-      <div className="app-shell">
+      <Shell>
         <ModeSelect onSingle={() => setMode("single")} onMulti={() => setMode("multi")} />
-      </div>
+      </Shell>
     );
   }
 
@@ -65,19 +80,19 @@ function App() {
     // Not in a room yet -> the lobby.
     if (!mpRoom) {
       return (
-        <div className="app-shell">
+        <Shell>
           <LobbyScreen
             onExitToModes={() => setMode(null)}
             onEnterRoom={(room, isHost) => setMpRoom({ room, isHost })}
           />
-        </div>
+        </Shell>
       );
     }
 
     // In a room. Which screen is decided entirely by the server-driven
     // GameState, exactly as the singleplayer branch below does.
     return (
-      <div className="app-shell">
+      <Shell>
         {mp.state.status === "idle" && (
           <div className="lobby">
             <WaitingRoom
@@ -113,17 +128,21 @@ function App() {
         )}
 
         {mp.extras.error && <p className="lobby-error">{mp.extras.error}</p>}
-      </div>
+      </Shell>
     );
   }
 
-  // Singleplayer — existing flow, unchanged. A "← Modes" link at the difficulty
-  // screen is the only addition, so players can get back to the mode picker.
+  // Singleplayer — existing flow, unchanged. A "Modes" back link at the
+  // difficulty screen is the only addition, so players can get back to the mode
+  // picker.
   return (
-    <div className="app-shell">
+    <Shell>
       {state.status === "idle" && (
         <div className="sp-home">
-          <button className="back-link" onClick={() => setMode(null)}>← Modes</button>
+          <button className="back-link" onClick={() => setMode(null)}>
+            <ArrowLeft size={15} aria-hidden />
+            Modes
+          </button>
           <DifficultySelect bests={bests} onSelect={startGame} />
         </div>
       )}
@@ -141,7 +160,7 @@ function App() {
           onMenu={resetToMenu}
         />
       )}
-    </div>
+    </Shell>
   );
 }
 

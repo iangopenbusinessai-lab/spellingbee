@@ -1,4 +1,6 @@
 .app-shell {
+  position: relative;
+  z-index: 1; /* above the fixed honeycomb wash on body::before */
   min-height: 100vh;
   min-height: 100dvh;
   display: flex;
@@ -12,6 +14,31 @@
     align-items: flex-start;
     padding-top: 32px;
   }
+}
+
+/* Theme toggle — fixed, so it's reachable from every screen rather than only
+   the difficulty select. 44px square keeps the Session 5 tap-target floor. */
+.theme-toggle {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 20;
+  width: 44px;
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--honey);
+  box-shadow: var(--shadow);
+  transition: border-color 0.15s ease, color 0.15s ease, transform 0.15s ease;
+}
+
+.theme-toggle:hover {
+  border-color: var(--honey);
+  transform: rotate(-12deg);
 }
 
 /* Difficulty select */
@@ -31,42 +58,138 @@
 .subtitle {
   color: var(--muted);
   margin-top: 8px;
-  margin-bottom: 32px;
+  margin-bottom: 28px;
 }
 
+/* ---------------------------------------------------------------------------
+   Hex tier cards.
+
+   The clip-path is the real hit area — a browser tests pointer events against
+   the clipped shape, not the layout box — so the visible hexagon and the
+   tappable hexagon are the same thing by construction. The grid gap supplies
+   the breathing room between cells; nothing invisible is left clickable.
+
+   The rim is the element's own background showing through around an inset
+   ::before that carries the fill. A plain CSS border can't be used here because
+   clip-path cuts it off along the diagonals.
+--------------------------------------------------------------------------- */
 .tier-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 14px 12px;
+  max-width: 380px;
+  margin: 0 auto;
 }
 
 .tier-card {
-  background: var(--surface);
-  border: 1px solid #3a3226;
-  border-radius: 10px;
-  padding: 18px;
-  text-align: left;
-  transition: border-color 0.15s ease, transform 0.1s ease;
+  --hex: polygon(25% 3%, 75% 3%, 100% 50%, 75% 97%, 25% 97%, 0% 50%);
+  position: relative;
+  /* Grid items normally stretch, but form controls resolve `normal` alignment
+     to `start`, so a bare <button> would size itself from min-height via the
+     aspect-ratio and sit narrower than its column. Explicit width restores the
+     intended fill and keeps the hexagons responsive. */
+  width: 100%;
+  /* A grid item's automatic minimum is its min-content width, which the blurb
+     text would otherwise hold above the column width on narrow phones — the
+     grid stops shrinking and quietly eats the shell's padding. */
+  min-width: 0;
+  aspect-ratio: 1 / 0.92;
+  min-height: 132px;
+  border: none;
+  padding: 10px 15%;
+  background: var(--tier-edge);
+  color: var(--tier-ink, var(--text));
+  clip-path: var(--hex);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  transition: transform 0.15s ease, filter 0.15s ease;
+}
+
+.tier-card::before {
+  content: "";
+  position: absolute;
+  inset: 2px;
+  clip-path: var(--hex);
+  background: var(--tier-fill);
+  z-index: 0;
+}
+
+.tier-card > * {
+  position: relative;
+  z-index: 1;
 }
 
 .tier-card:hover {
-  border-color: var(--honey);
-  transform: translateY(-2px);
+  transform: translateY(-3px);
+  filter: brightness(1.08);
+}
+
+.tier-card:active {
+  transform: translateY(0) scale(0.98);
+}
+
+/* An outline or box-shadow would be clipped away with the rest of the box, so
+   focus is shown by thickening the rim instead. */
+.tier-card:focus-visible {
+  outline: none;
+  background: var(--honey);
+}
+
+.tier-card:focus-visible::before {
+  inset: 5px;
+}
+
+.tier-card[data-tier="easy"] {
+  --tier-fill: var(--tier-easy-fill);
+  --tier-edge: var(--tier-easy-edge);
+}
+
+.tier-card[data-tier="medium"] {
+  --tier-fill: var(--tier-medium-fill);
+  --tier-edge: var(--tier-medium-edge);
+}
+
+.tier-card[data-tier="hard"] {
+  --tier-fill: var(--tier-hard-fill);
+  --tier-edge: var(--tier-hard-edge);
+}
+
+/* Expert takes the honey accent as its actual fill — the top of the ramp. */
+.tier-card[data-tier="expert"] {
+  --tier-fill: var(--tier-expert-fill);
+  --tier-edge: var(--tier-expert-edge);
+  --tier-ink: var(--tier-expert-ink);
 }
 
 .tier-label {
   display: block;
   font-family: var(--font-display);
   font-weight: 700;
-  font-size: 18px;
-  color: var(--cream);
+  font-size: 17px;
+  line-height: 1.1;
+  color: inherit;
 }
 
 .tier-blurb {
   display: block;
-  font-size: 13px;
-  color: var(--muted);
-  margin-top: 4px;
+  font-size: 11px;
+  line-height: 1.25;
+  opacity: 0.78;
+  color: inherit;
+}
+
+.tier-best {
+  display: block;
+  margin-top: 2px;
+  font-family: var(--font-display);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  opacity: 0.6;
+  color: inherit;
 }
 
 /* Round screen */
@@ -91,11 +214,17 @@
   font-family: var(--font-display);
   font-size: 22px;
   font-weight: 700;
-  color: var(--cream);
+  color: var(--text);
 }
 
 .stat.timer[data-low="true"] .stat-value {
   color: var(--bad);
+}
+
+/* Remounted by a changing key when the streak goes UP, which restarts the
+   animation. Purely presentational — it reads GameState.streak, nothing more. */
+.stat-value.pulse {
+  animation: streak-pulse 0.45s ease-out;
 }
 
 .stat-label {
@@ -107,17 +236,18 @@
 
 .prompt-card {
   background: var(--surface);
-  border: 1px solid #3a3226;
+  border: 1px solid var(--border);
   border-radius: 12px;
   padding: 28px 20px;
   margin-bottom: 20px;
+  box-shadow: var(--shadow);
 }
 
 .definition {
   font-size: 17px;
   line-height: 1.5;
   margin: 0 0 16px;
-  color: var(--cream);
+  color: var(--text);
 }
 
 .replay-btn {
@@ -131,6 +261,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 8px;
+  transition: border-color 0.15s ease;
 }
 
 .replay-btn:hover {
@@ -144,10 +276,11 @@
   text-align: center;
   padding: 14px;
   border-radius: 10px;
-  border: 2px solid #3a3226;
+  border: 2px solid var(--border);
   background: var(--bg);
-  color: var(--cream);
+  color: var(--text);
   outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .guess-input:focus {
@@ -156,10 +289,13 @@
 
 .guess-input.correct {
   border-color: var(--good);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--good) 22%, transparent);
+  animation: pop 0.34s ease-out;
 }
 
 .guess-input.incorrect {
   border-color: var(--bad);
+  animation: shake 0.4s ease-out;
 }
 
 .feedback {
@@ -194,16 +330,25 @@
   font-family: var(--font-body);
   font-size: 13px;
   padding: 7px 14px;
+  min-height: 44px;
   cursor: pointer;
   max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
 }
 
 .voice-toggle:hover {
-  color: var(--cream);
+  color: var(--text);
   border-color: var(--honey);
+}
+
+/* The voice name can be long; only the label truncates, never the icon. */
+.voice-toggle-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .voice-panel {
@@ -213,6 +358,7 @@
   border: 1px solid var(--honey-dark);
   border-radius: 14px;
   padding: 16px;
+  box-shadow: var(--shadow);
 }
 
 .voice-panel-head {
@@ -225,7 +371,7 @@
 .voice-panel-title {
   font-family: var(--font-display);
   font-weight: 700;
-  color: var(--cream);
+  color: var(--text);
 }
 
 .voice-close {
@@ -235,11 +381,13 @@
   font-family: var(--font-body);
   font-size: 13px;
   cursor: pointer;
+  min-height: 44px;
+  padding: 0 4px;
 }
 
 .voice-rate {
   width: 100%;
-  accent-color: var(--honey);
+  accent-color: var(--honey-solid);
 }
 
 .voice-actions {
@@ -253,11 +401,17 @@
   background: none;
   border: 1px solid var(--honey-dark);
   border-radius: 10px;
-  color: var(--cream);
+  color: var(--text);
   font-family: var(--font-body);
   font-size: 14px;
   padding: 8px 14px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
   cursor: pointer;
+  transition: border-color 0.15s ease;
 }
 
 .secondary-btn:hover {
@@ -300,6 +454,9 @@
 .results-screen h2 {
   font-family: var(--font-display);
   color: var(--honey);
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .results-stats {
@@ -307,6 +464,11 @@
   gap: 40px;
   justify-content: center;
   margin: 24px 0 32px;
+}
+
+.results-best {
+  color: var(--muted);
+  font-size: 14px;
 }
 
 .results-actions {
@@ -317,13 +479,23 @@
 }
 
 .primary-btn {
-  background: var(--honey);
-  color: #16130f;
+  background: var(--honey-solid);
+  color: var(--on-honey);
   border: none;
   border-radius: 8px;
   padding: 12px 28px;
+  min-height: 44px;
   font-weight: 500;
   font-size: 15px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: filter 0.15s ease;
+}
+
+.primary-btn:hover:not(:disabled) {
+  filter: brightness(1.07);
 }
 
 .ghost-btn {
@@ -332,6 +504,12 @@
   color: var(--muted);
   font-size: 13px;
   text-decoration: underline;
+  min-height: 44px;
+  padding: 0 12px;
+}
+
+.ghost-btn:hover {
+  color: var(--honey);
 }
 
 /* Mode select */
@@ -356,10 +534,12 @@
 
 .mode-card {
   background: var(--surface);
-  border: 1px solid #3a3226;
+  border: 1px solid var(--border);
   border-radius: 10px;
   padding: 24px 18px;
   text-align: left;
+  color: var(--text);
+  box-shadow: var(--shadow);
   transition: border-color 0.15s ease, transform 0.1s ease;
 }
 
@@ -368,12 +548,17 @@
   transform: translateY(-2px);
 }
 
+.mode-card-icon {
+  color: var(--honey);
+  margin-bottom: 10px;
+}
+
 .mode-title {
   display: block;
   font-family: var(--font-display);
   font-weight: 700;
   font-size: 18px;
-  color: var(--cream);
+  color: var(--text);
 }
 
 .mode-blurb {
@@ -394,6 +579,7 @@
   cursor: pointer;
   display: inline-flex;
   align-items: center;
+  gap: 6px;
   min-height: 44px;
 }
 
@@ -421,7 +607,7 @@
 .lobby h3 {
   font-family: var(--font-display);
   font-size: 16px;
-  color: var(--cream);
+  color: var(--text);
   margin: 0 0 12px;
 }
 
@@ -454,10 +640,11 @@
   width: 100%;
   font-size: 16px;
   padding: 12px;
+  min-height: 44px;
   border-radius: 8px;
-  border: 2px solid #3a3226;
+  border: 2px solid var(--border);
   background: var(--bg);
-  color: var(--cream);
+  color: var(--text);
   outline: none;
 }
 
@@ -474,10 +661,11 @@
 
 .lobby-panel {
   background: var(--surface);
-  border: 1px solid #3a3226;
+  border: 1px solid var(--border);
   border-radius: 12px;
   padding: 18px;
   margin-bottom: 12px;
+  box-shadow: var(--shadow);
 }
 
 .lobby-panel .primary-btn {
@@ -503,11 +691,12 @@
 /* Waiting room */
 .room-code-block {
   background: var(--surface);
-  border: 1px solid #3a3226;
+  border: 1px solid var(--border);
   border-radius: 12px;
   padding: 20px;
   text-align: center;
   margin-bottom: 18px;
+  box-shadow: var(--shadow);
 }
 
 .room-code-label {
@@ -558,20 +747,21 @@
   justify-content: space-between;
   align-items: center;
   background: var(--surface);
-  border: 1px solid #3a3226;
+  border: 1px solid var(--border);
   border-radius: 8px;
   padding: 12px 14px;
   margin-bottom: 8px;
 }
 
 .player-name {
-  color: var(--cream);
+  color: var(--text);
   font-size: 15px;
 }
 
 .player-tags {
   display: flex;
   gap: 6px;
+  align-items: center;
 }
 
 .tag {
@@ -583,8 +773,8 @@
 }
 
 .tag-host {
-  background: var(--honey-dark);
-  color: var(--cream);
+  background: var(--honey-solid);
+  color: var(--on-honey);
 }
 
 .tag-you {
@@ -602,8 +792,12 @@
   width: 100%;
 }
 
-.host-controls .primary-btn:disabled {
+/* Applies everywhere, not just the host controls: the lobby's Create/Join
+   buttons are disabled until a name is entered and were rendering at full
+   strength, reading as tappable when they aren't. */
+.primary-btn:disabled {
   opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .start-msg {
@@ -612,4 +806,29 @@
   margin-top: 12px;
   line-height: 1.5;
   word-break: break-word;
+}
+
+/* ---------------------------------------------------------------------------
+   Motion. All of it is decoration layered on states the player can already see
+   (a coloured border, a number changing), which is why the global
+   prefers-reduced-motion rule in index.css can switch it all off safely.
+--------------------------------------------------------------------------- */
+@keyframes pop {
+  0% { transform: scale(1); }
+  45% { transform: scale(1.04); }
+  100% { transform: scale(1); }
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  18% { transform: translateX(-7px); }
+  38% { transform: translateX(6px); }
+  58% { transform: translateX(-4px); }
+  78% { transform: translateX(2px); }
+}
+
+@keyframes streak-pulse {
+  0% { transform: scale(1); }
+  35% { transform: scale(1.32); color: var(--honey); }
+  100% { transform: scale(1); }
 }

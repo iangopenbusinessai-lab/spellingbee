@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Play, RotateCcw, Volume2 } from "lucide-react";
 import {
   DEFAULT_RATE,
   getRate,
@@ -61,7 +62,8 @@ export function VoiceSettings() {
   if (!open) {
     return (
       <button className="voice-toggle" onClick={() => setOpen(true)}>
-        🔊 Voice: {activeName}
+        <Volume2 size={15} aria-hidden />
+        <span className="voice-toggle-label">Voice: {activeName}</span>
       </button>
     );
   }
@@ -119,7 +121,8 @@ export function VoiceSettings() {
 
           <div className="voice-actions">
             <button className="secondary-btn" onClick={() => speakSample()}>
-              ▶ Test voice
+              <Play size={14} aria-hidden />
+              Test voice
             </button>
             {selected !== "" && (
               <button
@@ -129,6 +132,7 @@ export function VoiceSettings() {
                   setVoiceOverride(null);
                 }}
               >
+                <RotateCcw size={14} aria-hidden />
                 Reset to automatic
               </button>
             )}

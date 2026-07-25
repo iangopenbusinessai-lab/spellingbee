@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Volume2 } from "lucide-react";
 import type { GameState } from "../types";
 import { announceWord } from "../lib/tts";
 import { ScoreBar } from "./ScoreBar";
@@ -77,7 +78,8 @@ export function RoundScreen({
           className="replay-btn"
           onClick={() => setLeadIn(announceWord(state.currentWord!.word))}
         >
-          🔊 Hear it again
+          <Volume2 size={16} aria-hidden />
+          Hear it again
         </button>
       </div>
 

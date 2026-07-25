@@ -1,16 +1,121 @@
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500&display=swap');
 
+/* ---------------------------------------------------------------------------
+   Theme tokens.
+
+   Dark is the base identity and lives on :root. Light is an override, derived
+   from the same brand palette rather than an inversion: warm cream paper,
+   warm charcoal ink, and honey demoted from "background" to "accent". The bee
+   identity has to survive both, so the honey hue is constant — only its
+   lightness moves, because #e8a63d on cream is unreadable as text.
+
+   Selection order matters:
+     1. :root                        -> dark
+     2. prefers-color-scheme: light  -> light, but ONLY while no explicit
+                                        choice has been applied yet. This is
+                                        what makes the very first paint correct
+                                        before theme.ts runs, with no flash.
+     3. [data-theme="..."]           -> the explicit choice, wins over both.
+--------------------------------------------------------------------------- */
 :root {
+  color-scheme: dark;
+
   --bg: #16130f;
   --surface: #211c15;
-  --honey: #e8a63d;
+  --border: #3a3226;
+
+  --honey: #e8a63d;        /* accent for text, borders, headings */
+  --honey-solid: #e8a63d;  /* accent as a fill behind text */
   --honey-dark: #9c6b1f;
-  --cream: #f5efe3;
+  --on-honey: #1a1610;     /* ink on top of --honey-solid */
+
+  --text: #f5efe3;
   --muted: #a89c86;
   --good: #4fae8c;
   --bad: #d9645c;
+
+  --shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+
   --font-display: 'Space Grotesk', sans-serif;
   --font-body: 'Inter', sans-serif;
+
+  /* Escalating tier fills — calm sage, amber, burnt orange, then Expert
+     taking the honey accent itself so it reads as the top of the ramp. */
+  --tier-easy-fill: linear-gradient(155deg, #27311f, #1c2417);
+  --tier-easy-edge: #48603a;
+  --tier-medium-fill: linear-gradient(155deg, #3b2f1a, #291f12);
+  --tier-medium-edge: #85661f;
+  --tier-hard-fill: linear-gradient(155deg, #48301a, #301c0f);
+  --tier-hard-edge: #a35f22;
+  --tier-expert-fill: linear-gradient(155deg, #edae47, #b97c1e);
+  --tier-expert-edge: #f2c268;
+  --tier-expert-ink: #241a09;
+}
+
+/* The light palette is written twice on purpose: once as the pre-JS fallback
+   below and once as the explicit [data-theme] override further down. CSS has no
+   way to share a declaration block across a media-query boundary, and a
+   preprocessor isn't worth adding for one duplicated block. */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) {
+    color-scheme: light;
+
+    --bg: #faf3e3;
+    --surface: #fffcf5;
+    --border: #e6d6b4;
+
+    --honey: #9a6210;
+    --honey-solid: #e09a2c;
+    --honey-dark: #c9a05a;
+    --on-honey: #2b2115;
+
+    --text: #2c2419;
+    --muted: #7b6a51;
+    --good: #2c7a60;
+    --bad: #b4423a;
+
+    --shadow: 0 6px 18px rgba(90, 66, 20, 0.12);
+
+    --tier-easy-fill: linear-gradient(155deg, #ecf2e1, #dae7ca);
+    --tier-easy-edge: #9cb884;
+    --tier-medium-fill: linear-gradient(155deg, #fcefd0, #f3dfaa);
+    --tier-medium-edge: #d3ad4b;
+    --tier-hard-fill: linear-gradient(155deg, #fbdfc1, #f4c691);
+    --tier-hard-edge: #d4842f;
+    --tier-expert-fill: linear-gradient(155deg, #f0ad42, #d4841a);
+    --tier-expert-edge: #a96712;
+    --tier-expert-ink: #2b2115;
+  }
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --bg: #faf3e3;
+  --surface: #fffcf5;
+  --border: #e6d6b4;
+
+  --honey: #9a6210;
+  --honey-solid: #e09a2c;
+  --honey-dark: #c9a05a;
+  --on-honey: #2b2115;
+
+  --text: #2c2419;
+  --muted: #7b6a51;
+  --good: #2c7a60;
+  --bad: #b4423a;
+
+  --shadow: 0 6px 18px rgba(90, 66, 20, 0.12);
+
+  --tier-easy-fill: linear-gradient(155deg, #ecf2e1, #dae7ca);
+  --tier-easy-edge: #9cb884;
+  --tier-medium-fill: linear-gradient(155deg, #fcefd0, #f3dfaa);
+  --tier-medium-edge: #d3ad4b;
+  --tier-hard-fill: linear-gradient(155deg, #fbdfc1, #f4c691);
+  --tier-hard-edge: #d4842f;
+  --tier-expert-fill: linear-gradient(155deg, #f0ad42, #d4841a);
+  --tier-expert-edge: #a96712;
+  --tier-expert-ink: #2b2115;
 }
 
 * { box-sizing: border-box; }
@@ -22,11 +127,41 @@ html, body, #root {
 
 body {
   background: var(--bg);
-  color: var(--cream);
+  color: var(--text);
   font-family: var(--font-body);
+  transition: background-color 0.25s ease, color 0.25s ease;
+}
+
+/* Honeycomb wash. Fixed, non-interactive, and the same honey at low alpha in
+   both themes — it reads as texture on cream and on charcoal alike, so one
+   asset covers both. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg width='28' height='49' viewBox='0 0 28 49' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill-rule='evenodd'%3E%3Cg fill='%23e8a63d' fill-opacity='0.07' fill-rule='nonzero'%3E%3Cpath d='M13.99 9.25l13 7.5v15l-13 7.5L1 31.75v-15l12.99-7.5zM3 17.9v12.7l10.99 6.34 11-6.35V17.9l-11-6.34L3 17.9zM0 15l12.98-7.5V0h-2v6.35L0 12.69v2.3zm0 18.5L12.98 41v8h-2v-6.85L0 35.81v-2.3zM15 0v7.5L27.99 15H28v-2.31h-.01L17 6.35V0h-2zm0 49v-8l12.99-7.5H28v2.31h-.01L17 42.15V49h-2z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
 }
 
 button {
   font-family: inherit;
   cursor: pointer;
+}
+
+/* ---------------------------------------------------------------------------
+   Reduced motion.
+
+   Everything this app animates is decoration on top of a state the player can
+   already see (a green border, a number changing), so suppressing it costs no
+   information. Kept as one blunt global rather than per-rule opt-outs so a new
+   animation added later is covered by default instead of being forgotten.
+--------------------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
 }

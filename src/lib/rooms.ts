@@ -1,6 +1,6 @@
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import type { DifficultyTier } from "../types";
-import { supabase } from "./supabaseClient";
+import { getSupabase } from "./supabaseClient";
 
 // --- shapes (kept out of src/types.ts so the core GameState contract is
 // untouched; these describe backend rows, not singleplayer game state) --------
@@ -39,7 +39,7 @@ function generateCode(): string {
 }
 
 async function requireUid(): Promise<string> {
-  const { data } = await supabase.auth.getUser();
+  const { data } = await getSupabase().auth.getUser();
   const uid = data.user?.id;
   if (!uid) throw new Error("You're not signed in yet — try again in a moment.");
   return uid;
@@ -56,13 +56,13 @@ export async function createRoom(tier: DifficultyTier, displayName: string): Pro
     const id = crypto.randomUUID();
     const code = generateCode();
 
-    const { error } = await supabase.from("rooms").insert({ id, code, tier, host_id: uid });
+    const { error } = await getSupabase().from("rooms").insert({ id, code, tier, host_id: uid });
     if (error) {
       if (error.code === "23505") continue; // code/id collision — retry a new code
       throw error;
     }
 
-    const { error: joinErr } = await supabase
+    const { error: joinErr } = await getSupabase()
       .from("room_players")
       .insert({ room_id: id, player_id: uid, display_name: displayName });
     if (joinErr) throw joinErr;
@@ -81,13 +81,13 @@ export async function joinRoomByCode(rawCode: string, displayName: string): Prom
   if (!code) throw new Error("Enter a room code.");
   const uid = await requireUid();
 
-  const { data, error } = await supabase.rpc("get_room_by_code", { p_code: code });
+  const { data, error } = await getSupabase().rpc("get_room_by_code", { p_code: code });
   if (error) throw error;
   const room = Array.isArray(data) ? data[0] : data;
   if (!room) throw new Error("No open room with that code.");
   if (room.status !== "lobby") throw new Error("That room's game has already started.");
 
-  const { error: joinErr } = await supabase
+  const { error: joinErr } = await getSupabase()
     .from("room_players")
     .insert({ room_id: room.id, player_id: uid, display_name: displayName });
   // 23505 = we already have a row in this room (re-join) — that's fine.
@@ -95,7 +95,7 @@ export async function joinRoomByCode(rawCode: string, displayName: string): Prom
 
   // Best-effort capacity: we can only count once we're a member, so join first
   // then back out (self-leave delete) if we pushed the room past the cap.
-  const { count } = await supabase
+  const { count } = await getSupabase()
     .from("room_players")
     .select("*", { count: "exact", head: true })
     .eq("room_id", room.id);
@@ -110,10 +110,10 @@ export async function joinRoomByCode(rawCode: string, displayName: string): Prom
 // Leave a lobby by deleting our own room_players row. Allowed by the narrow
 // self-leave policy (0005) only while the room is in 'lobby' status.
 export async function leaveRoom(roomId: string): Promise<void> {
-  const { data } = await supabase.auth.getUser();
+  const { data } = await getSupabase().auth.getUser();
   const uid = data.user?.id;
   if (!uid) return;
-  const { error } = await supabase
+  const { error } = await getSupabase()
     .from("room_players")
     .delete()
     .eq("room_id", roomId)
@@ -122,7 +122,7 @@ export async function leaveRoom(roomId: string): Promise<void> {
 }
 
 export async function fetchPlayers(roomId: string): Promise<PlayerRow[]> {
-  const { data, error } = await supabase
+  const { data, error } = await getSupabase()
     .from("room_players")
     .select("room_id,player_id,display_name,score,streak,connected_at")
     .eq("room_id", roomId)
@@ -134,7 +134,7 @@ export async function fetchPlayers(roomId: string): Promise<PlayerRow[]> {
 // The host_id, readable by room members (unlike via get_room_by_code), so the
 // waiting room can mark who the host is.
 export async function fetchRoomHostId(roomId: string): Promise<string | null> {
-  const { data, error } = await supabase
+  const { data, error } = await getSupabase()
     .from("rooms")
     .select("host_id")
     .eq("id", roomId)
@@ -146,7 +146,7 @@ export async function fetchRoomHostId(roomId: string): Promise<string | null> {
 // Live player-list subscription. RLS scopes the stream to this room (members
 // only). Caller re-fetches the list on each change and unsubscribes on unmount.
 export function subscribePlayers(roomId: string, onChange: () => void): RealtimeChannel {
-  return supabase
+  return getSupabase()
     .channel(`room_players:${roomId}`)
     .on(
       "postgres_changes",
@@ -164,7 +164,7 @@ export function subscribePlayers(roomId: string, onChange: () => void): Realtime
 // the RLS block is surfaced to the user rather than silently no-oping, and never
 // pretends the game started.
 export async function startGame(roomId: string): Promise<{ started: boolean; blockedError: string | null }> {
-  const { error } = await supabase.from("rooms").update({ status: "active" }).eq("id", roomId);
+  const { error } = await getSupabase().from("rooms").update({ status: "active" }).eq("id", roomId);
   if (error) {
     return { started: false, blockedError: `${error.code ?? ""} ${error.message}`.trim() };
   }

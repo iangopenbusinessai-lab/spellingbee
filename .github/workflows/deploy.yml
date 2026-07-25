@@ -18,7 +18,15 @@ jobs:
         with:
           node-version: 20
       - run: npm install
+      # Vite inlines VITE_* at build time, so these must be present HERE, not at
+      # runtime. Without them the app builds fine but multiplayer is disabled in
+      # the deployed bundle. The anon key is a publishable client key (it ships
+      # to every browser by design and is protected by RLS) — it lives in Actions
+      # secrets so it stays out of the repo, not because the bundle hides it.
       - run: npm run build
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { supabase } from "../lib/supabaseClient";
+import { getSupabase, isSupabaseConfigured } from "../lib/supabaseClient";
 import { ensureAnonymousSession } from "../lib/auth";
 
 export interface SupabaseUserState {
@@ -21,9 +21,22 @@ export function useSupabaseUser(): SupabaseUserState {
   useEffect(() => {
     let active = true;
 
+    // No Supabase config in this build: report it as a normal auth error so the
+    // lobby renders a message with a way back, instead of throwing.
+    if (!isSupabaseConfigured) {
+      setState({
+        userId: null,
+        ready: true,
+        error:
+          "Multiplayer isn't configured for this build (missing Supabase env vars). " +
+          "Singleplayer still works.",
+      });
+      return;
+    }
+
     ensureAnonymousSession()
       .then(async () => {
-        const { data } = await supabase.auth.getUser();
+        const { data } = await getSupabase().auth.getUser();
         if (active) setState({ userId: data.user?.id ?? null, ready: true, error: null });
       })
       .catch((e: unknown) => {
@@ -37,7 +50,7 @@ export function useSupabaseUser(): SupabaseUserState {
       });
 
     // Keep the id fresh across token refreshes / future account upgrades.
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: sub } = getSupabase().auth.onAuthStateChange((_event, session) => {
       if (active) setState((s) => ({ ...s, userId: session?.user?.id ?? s.userId }));
     });
 

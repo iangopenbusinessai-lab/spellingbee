@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { supabase } from "../lib/supabaseClient";
+import { getSupabase } from "../lib/supabaseClient";
 import {
   fetchPlayers,
   fetchRoomHostId,
@@ -51,7 +51,7 @@ export function WaitingRoom({
 
     return () => {
       active = false;
-      supabase.removeChannel(channel);
+      getSupabase().removeChannel(channel);
     };
   }, [room.id]);
 

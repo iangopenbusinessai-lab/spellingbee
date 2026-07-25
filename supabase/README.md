@@ -19,6 +19,9 @@ supabase/
     0004_realtime.sql      adds room_players to the realtime publication
     0005_self_leave.sql    a player may delete only their own lobby row
     0006_round_engine.sql  round state + the atomic game-transition functions
+    0007_realtime_rounds.sql  publishes rooms + round_results to Realtime
+    0008_server_now.sql    server clock for the client countdown
+    0009_round_sweeper.sql pg_cron job advancing rounds with no client attached
   functions/
     _shared/mod.ts         auth + RPC plumbing (zero dependencies)
     start-game/            host-only lobby -> active
@@ -29,8 +32,32 @@ supabase/
     verify.mjs             schema/RLS checks (Session 7b)
     verify_functions.mjs   edge-function authorization + anti-cheat checks
     verify_race.mjs        8-way winner race + server-clock timeout
+    verify_sweeper_race.mjs      sweeper vs client advance: no double-advance
+    verify_sweeper_realtime.mjs  clients see sweeper-driven advancement
   README.md
 ```
+
+### Unattended rounds (Session 10)
+
+Round advancement used to depend on a client's polling loop, so a game froze
+when every tab was backgrounded or closed. `0009` schedules
+`sweep_expired_rounds()` through pg_cron every 5 seconds; it asks
+`advance_round_tx` about every active room and lets that function decide, so
+the deadline rule still lives in exactly one place.
+
+Inspect or change the job with:
+
+```sql
+select jobname, schedule, active from cron.job;
+select d.status, d.start_time from cron.job_run_details d
+  join cron.job j on j.jobid = d.jobid
+ where j.jobname = 'sweep-expired-rounds'
+ order by d.start_time desc limit 10;
+```
+
+The client loop is still the fast path (~150ms transitions when someone is
+watching); the sweeper is the backstop (≤5s when nobody is). Both call the same
+atomic function, so they cannot double-advance a round.
 
 ### Server authority (Session 9a)
 

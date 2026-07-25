@@ -133,14 +133,35 @@ Rules this hook must keep:
   self-delete only in 'lobby'), so their score remains on the scoreboard and
   they simply forfeit the remaining rounds. The game continues without them.
 
-KNOWN LIMITATION — round advancement is client-driven. `advance-round` is
-called by a member's polling loop (host first, others ~1.5s later as a fallback
-so a host leaving can't freeze the room). Browsers throttle timers in hidden
-tabs, so if EVERY player's tab is backgrounded, rounds advance late — measured
-~40-60s late with all tabs hidden past Chrome's intensive-throttling threshold.
-It self-corrects as soon as any tab is visible. The robust fix is a server-side
-sweeper (pg_cron or a scheduled edge function) that advances rounds whose
-deadline has passed; that is not built yet.
+**Rounds now advance with no client attached** (Session 10). Migration `0009`
+enables pg_cron (1.6.4 on this project, which supports sub-minute interval
+schedules) and runs `sweep_expired_rounds()` every 5 seconds. Verified live:
+with both browser tabs CLOSED, a game advanced rounds 2→10 and reached
+`finished` entirely on its own, at a steady 20.0s per round.
+
+Rules this sweeper must keep:
+- It contains NO game rules. It selects rooms on `status = 'active'` and calls
+  `advance_round_tx`, which stays the single authority on whether a round is
+  over. Do NOT add a deadline predicate to the sweep's WHERE clause — that
+  would create a second copy of the rule that can drift. `advance_round_tx` is
+  already a cheap no-op for a room that isn't due.
+- It passes the room's earliest-joined member as the acting player purely to
+  satisfy `advance_round_tx`'s membership guard; `p_player` is used for nothing
+  else and no game rule depends on which member is named.
+- It is not an exposed RPC — revoked from anon/authenticated, so a client
+  calling it gets 42501. The pg_cron job runs as the function owner.
+
+The client polling loop from 9b is KEPT as the primary fast path, deliberately
+against the "make it a 30s fallback" suggestion. Reason: the sweeper's floor is
+its 5s tick, so relying on it alone would stretch every round transition's
+feedback window from ~1.25s to 1.1-6.1s for games someone is actually watching
+— a visible regression in the common case. Keeping both gives ~150ms
+transitions when anyone is present and a guaranteed ≤5s backstop when nobody
+is. They cannot conflict: `advance_round_tx` takes `for update` on the room and
+rejects any call whose expected round no longer matches, so at most one caller
+can ever advance a given round (verified with 6 concurrent client calls per
+round racing the sweeper — exactly one winner each time, contiguous rounds, no
+errors).
 
 ## Naming note
 Local dev folder/npm package name may still say "spelling-race" from

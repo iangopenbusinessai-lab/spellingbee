@@ -169,6 +169,17 @@
 
 .feedback.correct { color: var(--good); }
 .feedback.incorrect { color: var(--bad); }
+/* Multiplayer: answered, round still live — deliberately muted, and never
+   accompanied by the word itself. */
+.feedback.waiting { color: var(--muted); }
+
+/* Multiplayer round outcome, e.g. "Alex won this round". */
+.result-note {
+  margin-top: 0.35rem;
+  text-align: center;
+  font-size: 0.95rem;
+  color: var(--muted);
+}
 
 .skip-btn {
   margin-top: 16px;

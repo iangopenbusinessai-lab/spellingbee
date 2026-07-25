@@ -2,8 +2,7 @@ import { useState } from "react";
 import type { DifficultyTier } from "../types";
 import { useSupabaseUser } from "../hooks/useSupabaseUser";
 import { getDisplayName, setDisplayName as persistDisplayName } from "../lib/storage";
-import { createRoom, joinRoomByCode, leaveRoom, type RoomInfo } from "../lib/rooms";
-import { WaitingRoom } from "./WaitingRoom";
+import { createRoom, joinRoomByCode, type RoomInfo } from "../lib/rooms";
 
 const TIERS: { id: DifficultyTier; label: string }[] = [
   { id: "easy", label: "Easy" },
@@ -12,17 +11,22 @@ const TIERS: { id: DifficultyTier; label: string }[] = [
   { id: "expert", label: "Expert" },
 ];
 
-type View =
-  | { kind: "home" }
-  | { kind: "waiting"; room: RoomInfo; isHost: boolean };
-
-export function LobbyScreen({ onExitToModes }: { onExitToModes: () => void }) {
+// The lobby now only gets you INTO a room; the room itself (waiting room, then
+// the game) is owned by App, which runs useMultiplayerGame for it. That keeps
+// the game-state hook at the same level as useGameEngine rather than buried
+// inside a screen component.
+export function LobbyScreen({
+  onExitToModes,
+  onEnterRoom,
+}: {
+  onExitToModes: () => void;
+  onEnterRoom: (room: RoomInfo, isHost: boolean) => void;
+}) {
   const { userId, ready, error: authError } = useSupabaseUser();
 
   const [name, setName] = useState(() => getDisplayName());
   const [tier, setTier] = useState<DifficultyTier>("medium");
   const [code, setCode] = useState("");
-  const [view, setView] = useState<View>({ kind: "home" });
   const [busy, setBusy] = useState<null | "create" | "join">(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -36,7 +40,7 @@ export function LobbyScreen({ onExitToModes }: { onExitToModes: () => void }) {
     try {
       persistDisplayName(trimmedName);
       const room = await createRoom(tier, trimmedName);
-      setView({ kind: "waiting", room, isHost: true });
+      onEnterRoom(room, true);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -51,23 +55,12 @@ export function LobbyScreen({ onExitToModes }: { onExitToModes: () => void }) {
     try {
       persistDisplayName(trimmedName);
       const room = await joinRoomByCode(code, trimmedName);
-      setView({ kind: "waiting", room, isHost: false });
+      onEnterRoom(room, false);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(null);
     }
-  }
-
-  async function handleLeave(roomId: string) {
-    try {
-      await leaveRoom(roomId);
-    } catch {
-      // Non-fatal: even if the row delete is rejected, drop back to the lobby
-      // home so the user isn't stuck.
-    }
-    setCode("");
-    setView({ kind: "home" });
   }
 
   if (!ready) {
@@ -79,19 +72,6 @@ export function LobbyScreen({ onExitToModes }: { onExitToModes: () => void }) {
       <div className="lobby">
         <button className="back-link" onClick={onExitToModes}>← Modes</button>
         <p className="lobby-error">Couldn't sign in: {authError ?? "unknown error"}</p>
-      </div>
-    );
-  }
-
-  if (view.kind === "waiting") {
-    return (
-      <div className="lobby">
-        <WaitingRoom
-          room={view.room}
-          currentUserId={userId}
-          isHost={view.isHost}
-          onLeave={() => handleLeave(view.room.id)}
-        />
       </div>
     );
   }

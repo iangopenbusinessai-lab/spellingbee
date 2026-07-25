@@ -7,10 +7,22 @@ export function RoundScreen({
   state,
   onSubmit,
   onSkip,
+  awaitingOthers = false,
+  resultNote = null,
+  canSkip = true,
 }: {
   state: GameState;
   onSubmit: (guess: string) => void;
   onSkip: () => void;
+  // --- multiplayer-only, all optional so singleplayer is unchanged ----------
+  /** I've answered but the round is still live: lock the input WITHOUT
+   *  revealing the word, which others are still racing to spell. */
+  awaitingOthers?: boolean;
+  /** How the round ended, e.g. "Alex won this round" / "Time's up". */
+  resultNote?: string | null;
+  /** Multiplayer has no skip (see useMultiplayerGame.skipWord) — hide it
+   *  rather than render a button that does nothing. */
+  canSkip?: boolean;
 }) {
   const [guess, setGuess] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
@@ -67,12 +79,18 @@ export function RoundScreen({
         />
       </form>
 
-      {feedback === "correct" && <p className="feedback correct">Correct!</p>}
-      {feedback === "incorrect" && (
-        <p className="feedback incorrect">The word was "{state.currentWord.word}"</p>
+      {/* Answered, round still live: no reveal — others are still racing. */}
+      {awaitingOthers && (
+        <p className="feedback waiting">Answer locked in — waiting for the other players…</p>
       )}
 
-      {state.status === "playing" && (
+      {!awaitingOthers && feedback === "correct" && <p className="feedback correct">Correct!</p>}
+      {!awaitingOthers && feedback === "incorrect" && (
+        <p className="feedback incorrect">The word was "{state.currentWord.word}"</p>
+      )}
+      {!awaitingOthers && resultNote && <p className="result-note">{resultNote}</p>}
+
+      {state.status === "playing" && canSkip && (
         <button className="skip-btn" onClick={onSkip}>
           Skip
         </button>

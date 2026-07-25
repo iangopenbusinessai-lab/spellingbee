@@ -107,10 +107,40 @@ Rules this engine must keep:
 - `ROUND_SECONDS` in `useGameEngine.ts` and `public.round_seconds()` must stay
   in sync — the client renders the countdown, the server enforces it.
 
-Still to do (Session 9b): no `src/` code calls these functions yet.
-`startGame()` in `src/lib/rooms.ts` is still the STUB that surfaces the RLS
-rejection — it needs to call the `start-game` edge function instead. Then the
-multiplayer round/scoring hook and UI.
+**Multiplayer is playable end to end** (Session 9b). `useMultiplayerGame(roomId)`
+satisfies `GameEngineApi` exactly, so `App.tsx` runs it beside `useGameEngine`
+and the screens can't tell which engine produced their `GameState`.
+`rooms.ts`'s `startGame()` is no longer a stub — it, `submitAnswer` and
+`advanceRound` call the edge functions. Migration `0007` publishes `rooms` and
+`round_results` to Realtime; `0008` adds `server_now()`.
+
+Rules this hook must keep:
+- It computes NO outcomes. Correctness, winner, scores and game-over all
+  arrive as database changes over Realtime. Never add a local answer
+  comparison — that seam belongs to the server.
+- Round timing is server-derived: the deadline is `rooms.round_started_at` plus
+  `round_seconds(tier)` fetched by RPC, and "now" comes from `serverClock.ts`,
+  which syncs against `server_now()`. Never import or copy `ROUND_SECONDS`
+  from `useGameEngine.ts` into the multiplayer path.
+- `timeLeft` must derive from the ticking `nowMs` STATE. Deriving it from
+  `serverNow()` inside a memo silently freezes the countdown, because React
+  can't see the clock move (this bug shipped and was caught in testing).
+- `skipWord` is intentionally a no-op: the word is shared and rounds end on a
+  winner or the server clock, so there is no per-player skip to perform. The
+  Skip button is hidden via `RoundScreen`'s `canSkip={false}` rather than left
+  as a dead control.
+- Leaving mid-game: the player's `room_players` row stays (0005 permits
+  self-delete only in 'lobby'), so their score remains on the scoreboard and
+  they simply forfeit the remaining rounds. The game continues without them.
+
+KNOWN LIMITATION — round advancement is client-driven. `advance-round` is
+called by a member's polling loop (host first, others ~1.5s later as a fallback
+so a host leaving can't freeze the room). Browsers throttle timers in hidden
+tabs, so if EVERY player's tab is backgrounded, rounds advance late — measured
+~40-60s late with all tabs hidden past Chrome's intensive-throttling threshold.
+It self-corrects as soon as any tab is visible. The robust fix is a server-side
+sweeper (pg_cron or a scheduled edge function) that advances rounds whose
+deadline has passed; that is not built yet.
 
 ## Naming note
 Local dev folder/npm package name may still say "spelling-race" from

@@ -57,17 +57,26 @@ export function WaitingRoom({
 
   const canStart = isHost && players.length >= 2;
 
+  // Friendly text for the named errors start-game can return. Anything else is
+  // surfaced raw rather than swallowed.
+  const START_ERRORS: Record<string, string> = {
+    not_host: "Only the host can start the game.",
+    not_enough_players: "You need at least 2 players to start.",
+    already_started: "This game has already started.",
+    no_words_for_tier: "No words available for this difficulty.",
+  };
+
   async function handleStart() {
     setStarting(true);
     setStartMsg(null);
-    const { started, blockedError } = await startGame(room.id);
+    const res = await startGame(room.id);
     setStarting(false);
-    if (!started) {
-      setStartMsg(
-        `Starting a game isn't wired up yet — it needs the Session 9 edge function. ` +
-          `The direct client write to rooms.status was correctly rejected: ${blockedError}`
-      );
+    if (!res.ok) {
+      setStartMsg(START_ERRORS[res.error ?? ""] ?? `Couldn't start the game: ${res.error}`);
     }
+    // On success nothing happens here on purpose: the server flips the room to
+    // 'active' and every client (including this one) is moved into round 1 by
+    // the realtime subscription in useMultiplayerGame.
   }
 
   return (

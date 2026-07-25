@@ -156,19 +156,133 @@ export function subscribePlayers(roomId: string, onChange: () => void): Realtime
     .subscribe();
 }
 
-// TODO(session-9): advancing a room to 'active' is a server-authoritative
-// action. Direct client writes to rooms.status are blocked by RLS (verified in
-// Session 7b) and MUST stay blocked — the real implementation will call a
-// Supabase edge function ('start-game') that flips status and seeds round 1 with
-// the service role. Until that exists this is a STUB: it attempts the write so
-// the RLS block is surfaced to the user rather than silently no-oping, and never
-// pretends the game started.
-export async function startGame(roomId: string): Promise<{ started: boolean; blockedError: string | null }> {
-  const { error } = await getSupabase().from("rooms").update({ status: "active" }).eq("id", roomId);
-  if (error) {
-    return { started: false, blockedError: `${error.code ?? ""} ${error.message}`.trim() };
+// --- edge-function calls (server-authoritative round engine, Session 9a) -----
+//
+// rooms.status, room_players.score and round_results are all edge-function-only
+// writes; RLS blocks the client from touching them directly and MUST keep doing
+// so. Everything below goes through an edge function, which verifies the
+// caller's token and then runs one of the atomic plpgsql transitions in
+// migration 0006.
+
+export interface EdgeResult<T = Record<string, unknown>> {
+  ok: boolean;
+  /** Named error from the function (e.g. "not_host", "stale_round"), if it failed. */
+  error: string | null;
+  status: number;
+  data: T | null;
+}
+
+async function callEdge<T = Record<string, unknown>>(
+  name: string,
+  body: Record<string, unknown>
+): Promise<EdgeResult<T>> {
+  const supabase = getSupabase();
+  const { data: sessionData } = await supabase.auth.getSession();
+  const token = sessionData.session?.access_token;
+  if (!token) {
+    return { ok: false, error: "not_signed_in", status: 401, data: null };
   }
-  // Unreachable while RLS blocks the write; guard against a future policy change
-  // masking the missing edge function.
-  return { started: false, blockedError: "Direct write unexpectedly succeeded; edge function still not implemented." };
+
+  const url = import.meta.env.VITE_SUPABASE_URL;
+  const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+  const res = await fetch(`${url}/functions/v1/${name}`, {
+    method: "POST",
+    headers: {
+      apikey: anonKey,
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+
+  let parsed: Record<string, unknown> | null = null;
+  try {
+    parsed = (await res.json()) as Record<string, unknown>;
+  } catch {
+    parsed = null;
+  }
+
+  if (!res.ok) {
+    const err = typeof parsed?.error === "string" ? parsed.error : `http_${res.status}`;
+    return { ok: false, error: err, status: res.status, data: parsed as T | null };
+  }
+  return { ok: true, error: null, status: res.status, data: parsed as T | null };
+}
+
+export interface RoundStartPayload {
+  round_num: number;
+  word: string;
+  round_started_at: string;
+  round_seconds: number;
+  tier: DifficultyTier;
+}
+
+/**
+ * Host-only: begin the game.
+ *
+ * Was a stub through Session 8 because rooms.status is not client-writable.
+ * The 'start-game' edge function (Session 9a) is the real path: it verifies
+ * from the caller's token that they are the room's host, requires 2+ players,
+ * picks round 1's word server-side and starts the server clock.
+ */
+export async function startGame(roomId: string): Promise<EdgeResult<RoundStartPayload>> {
+  return callEdge<RoundStartPayload>("start-game", { room_id: roomId });
+}
+
+export interface SubmitAnswerPayload {
+  correct: boolean;
+  won: boolean;
+  points?: number;
+  streak?: number;
+  response_time_ms: number;
+}
+
+/**
+ * Submit an answer for the current round.
+ *
+ * Deliberately sends only the raw guess: correctness is decided server-side
+ * against the round's word, and the response time is measured from the server's
+ * own round start to its receipt of this call. The client never computes or
+ * reports either.
+ */
+export async function submitAnswer(
+  roomId: string,
+  roundNum: number,
+  guess: string
+): Promise<EdgeResult<SubmitAnswerPayload>> {
+  return callEdge<SubmitAnswerPayload>("submit-answer", {
+    room_id: roomId,
+    round_num: roundNum,
+    guess,
+  });
+}
+
+export interface AdvanceRoundPayload {
+  advanced: boolean;
+  finished: boolean;
+  round_num?: number;
+  word?: string;
+  round_started_at?: string;
+  round_seconds?: number;
+  previous_winner_id?: string | null;
+}
+
+/**
+ * Ask the server to move past the current round.
+ *
+ * Callable by any member; the server ignores the caller's opinion about whether
+ * the round is over and re-derives it from its own clock, so an early call is
+ * rejected with 409 round_in_progress. Expected-and-harmless failures
+ * ("round_in_progress", "already_advanced") are normal in a room where several
+ * clients ask at once.
+ */
+export async function advanceRound(
+  roomId: string,
+  roundNum: number
+): Promise<EdgeResult<AdvanceRoundPayload>> {
+  return callEdge<AdvanceRoundPayload>("advance-round", {
+    room_id: roomId,
+    round_num: roundNum,
+  });
 }

@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { DifficultyTier, GameEngineApi, GameState, WordEntry } from "../types";
 import { wordsForTier } from "../data/words";
-import { speakWord } from "../lib/tts";
 
 // Fewer seconds per word as difficulty rises. Tune once you have real
 // playtesting data — this is a starting guess, not a balanced curve.
@@ -64,8 +63,11 @@ export function useGameEngine(): GameEngineApi {
       timeLeft: ROUND_SECONDS[tier],
       wordsRemaining: queueRef.current.length,
     }));
-    // small delay so the UI paints before speaking
-    window.setTimeout(() => speakWord(next.word), 200);
+    // Speaking is NOT triggered here. RoundScreen announces the word (lead-in
+    // phrase + pause + word) when it renders a new one, which keeps narration
+    // identical for singleplayer and multiplayer and lets the spoken lead-in and
+    // the on-screen lead-in come from the same call. Triggering it here too
+    // would speak every word twice.
   }, []);
 
   const startGame = useCallback(

@@ -3,7 +3,6 @@ import type { DifficultyTier, GameEngineApi, GameState, RoundStatus, WordEntry }
 import { getSupabase } from "../lib/supabaseClient";
 import { advanceRound, startGame as startGameFn, submitAnswer } from "../lib/rooms";
 import { secondsUntil, serverNow, syncServerClock } from "../lib/serverClock";
-import { speakWord } from "../lib/tts";
 
 // useMultiplayerGame — the multiplayer counterpart of useGameEngine.
 //
@@ -111,7 +110,6 @@ export function useMultiplayerGame(roomId: string | null): MultiplayerGame {
   // the clock read when some *other* dependency last changed.
   const [nowMs, setNowMs] = useState(() => serverNow());
 
-  const spokenRoundRef = useRef<number | null>(null);
   const advanceAttemptRef = useRef<{ round: number; at: number } | null>(null);
 
   // ---- data loading --------------------------------------------------------
@@ -189,7 +187,6 @@ export function useMultiplayerGame(roomId: string | null): MultiplayerGame {
       setMyOutcome(null);
       setBestStreak(0);
       submittedRoundRef.current = null;
-      spokenRoundRef.current = null;
       return;
     }
 
@@ -273,14 +270,10 @@ export function useMultiplayerGame(roomId: string | null): MultiplayerGame {
     }
   }, [currentRound]);
 
-  // Speak each new word once, through lib/tts.ts as CLAUDE.md requires.
-  useEffect(() => {
-    if (!word || !room || room.status !== "active") return;
-    if (spokenRoundRef.current === room.current_round) return;
-    spokenRoundRef.current = room.current_round;
-    const t = window.setTimeout(() => speakWord(word.word), 200);
-    return () => window.clearTimeout(t);
-  }, [word, room]);
+  // Speaking is NOT triggered here. RoundScreen announces each new word
+  // (lead-in phrase + pause + word), so multiplayer gets the narrator treatment
+  // from the same implementation singleplayer uses rather than a second copy.
+  // Triggering it here as well would speak every word twice.
 
   // ---- countdown -----------------------------------------------------------
 
@@ -490,7 +483,6 @@ export function useMultiplayerGame(roomId: string | null): MultiplayerGame {
     setMyOutcome(null);
     setError(null);
     submittedRoundRef.current = null;
-    spokenRoundRef.current = null;
   }, []);
 
   return {

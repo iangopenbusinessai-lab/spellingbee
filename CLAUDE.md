@@ -30,6 +30,13 @@ Deploys via `.github/workflows/deploy.yml` on every push to `main`
   field is genuinely needed everywhere, and update this file when you do.
 - All speech synthesis goes through `src/lib/tts.ts` — never call
   `window.speechSynthesis` directly from a component.
+- `RoundScreen` is the ONLY place that announces a word, via
+  `announceWord()`, for both the initial reveal and the replay button. The
+  engine hooks deliberately do not speak: both modes render `RoundScreen`, so
+  one call site gives singleplayer and multiplayer identical narration and
+  keeps the spoken lead-in identical to the displayed one. Re-adding a
+  `speakWord()` call to `useGameEngine` or `useMultiplayerGame` would speak
+  every word twice.
 - No component may assume there is exactly one player in a way that's hard
   to reverse later (e.g. hardcoded "your score" logic that can't extend to
   multiple players' scores once multiplayer exists).

@@ -32,3 +32,32 @@ export function getDisplayName(): string {
 export function setDisplayName(name: string): void {
   localStorage.setItem(DISPLAY_NAME_KEY, name);
 }
+
+// --- voice preferences -----------------------------------------------------
+// Same "spellingbee:" prefix convention as the best scores above. Both are
+// optional: with no saved voice, tts.ts falls back to its automatic pick, and
+// with no saved rate it uses DEFAULT_RATE.
+
+const VOICE_NAME_KEY = "spellingbee:voice:name";
+const VOICE_RATE_KEY = "spellingbee:voice:rate";
+
+/** Explicitly chosen voice name, or null to let the heuristic decide. */
+export function getVoiceName(): string | null {
+  return localStorage.getItem(VOICE_NAME_KEY);
+}
+
+export function setVoiceName(name: string | null): void {
+  if (name) localStorage.setItem(VOICE_NAME_KEY, name);
+  else localStorage.removeItem(VOICE_NAME_KEY);
+}
+
+export function getVoiceRate(): number | null {
+  const raw = localStorage.getItem(VOICE_RATE_KEY);
+  if (raw === null) return null;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : null;
+}
+
+export function setVoiceRate(rate: number): void {
+  localStorage.setItem(VOICE_RATE_KEY, String(rate));
+}

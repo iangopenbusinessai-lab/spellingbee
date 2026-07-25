@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { GameState } from "../types";
-import { speakWord } from "../lib/tts";
+import { announceWord } from "../lib/tts";
 import { ScoreBar } from "./ScoreBar";
 
 export function RoundScreen({
@@ -25,12 +25,28 @@ export function RoundScreen({
   canSkip?: boolean;
 }) {
   const [guess, setGuess] = useState("");
+  const [leadIn, setLeadIn] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  const wordId = state.currentWord?.id;
+  const wordText = state.currentWord?.word;
 
   useEffect(() => {
     setGuess("");
     inputRef.current?.focus();
-  }, [state.currentWord?.id]);
+  }, [wordId]);
+
+  // Announcing from here — rather than from each engine hook — is what gives
+  // singleplayer and multiplayer identical narration from one implementation:
+  // both render this component, so both get the lead-in for free. It also keeps
+  // the spoken phrase and the displayed phrase from ever disagreeing, since the
+  // same call produces both.
+  useEffect(() => {
+    if (!wordText) return;
+    // Small beat so the new word paints before audio starts.
+    const t = window.setTimeout(() => setLeadIn(announceWord(wordText)), 200);
+    return () => window.clearTimeout(t);
+  }, [wordId, wordText]);
 
   const scrollInputIntoView = () => {
     inputRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
@@ -50,9 +66,17 @@ export function RoundScreen({
         wordsRemaining={state.wordsRemaining}
       />
 
+      {/* Mirrors what the narrator just said, so the audio and the screen agree. */}
+      {leadIn && <p className="lead-in">{leadIn}</p>}
+
       <div className="prompt-card">
         <p className="definition">"{state.currentWord.definition}"</p>
-        <button className="replay-btn" onClick={() => speakWord(state.currentWord!.word)}>
+        {/* Replay re-announces: announceWord reuses the SAME lead-in for the
+            same word, so hearing it again doesn't re-roll the phrase. */}
+        <button
+          className="replay-btn"
+          onClick={() => setLeadIn(announceWord(state.currentWord!.word))}
+        >
           🔊 Hear it again
         </button>
       </div>

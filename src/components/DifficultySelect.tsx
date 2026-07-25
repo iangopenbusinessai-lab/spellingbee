@@ -1,4 +1,5 @@
 import type { DifficultyTier } from "../types";
+import { VoiceSettings } from "./VoiceSettings";
 
 const TIERS: { id: DifficultyTier; label: string; blurb: string }[] = [
   { id: "easy", label: "Easy", blurb: "Common everyday words" },
@@ -27,6 +28,9 @@ export function DifficultySelect({
           </button>
         ))}
       </div>
+      {/* Placed here so a player can hear and fix the voice BEFORE starting a
+          timed round, rather than discovering a bad voice mid-game. */}
+      <VoiceSettings />
     </div>
   );
 }

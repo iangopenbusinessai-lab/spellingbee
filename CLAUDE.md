@@ -390,6 +390,67 @@ Rules this bar must keep:
   and the pulse; the bar then steps once a second and loses no information,
   which is exactly the Session 12 guarantee.
 
+A **turn-based elimination engine** landed in Session 18 (migration
+`0012_elimination_engine.sql`, applied and verified live by
+`supabase/scripts/verify_elimination.mjs` — all 9 sections pass). This is a
+different game from the 0006 race, not an extension of it: one player at a time
+gets a word, correct survives and passes the turn, a wrong answer OR a timeout
+costs a life, 0 lives eliminates, and the game ends the instant one player
+remains. Schema + plpgsql only — **no edge function, sweeper or `src/` changes
+yet**, so nothing routes to this engine until the next session wires it up.
+
+Both engines coexist, chosen by the new `rooms.mode` (`'race'` | `'elimination'`,
+defaults to `'race'`). 0006's functions are untouched.
+
+Rules this engine must keep:
+- **The sweeper interlock is the data shape, not a rule.** An elimination game
+  never writes `rooms.round_started_at`; it keeps its clock on
+  `round_results.turn_started_at`. 0009's sweep selects on
+  `status='active' AND round_started_at IS NOT NULL`, so elimination rooms are
+  excluded without editing 0009. If you ever set `round_started_at` here, the
+  race sweeper will corrupt the room. Per-turn timing also has to live on the
+  turn row because each turn has its own decayed length.
+- **`turn_order` defines who is in the game.** `start_elimination_game_tx` deals
+  a slot to everyone present; every later question (still standing? who's next?
+  won yet?) is asked only of players holding one, via
+  `elimination_survivors()`. A row without a slot is a spectator. This is load
+  bearing: 0002 lets a client INSERT into `room_players` with no status
+  predicate, and before this guard one uninvited join made survivors exceed
+  `starting_players`, so `decayed_round_seconds` raised 22023 and every later
+  answer and timeout aborted — a permanent wedge any stranger could trigger. A
+  restrictive INSERT policy now also refuses mid-game joins, scoped to
+  elimination rooms past the lobby so race rooms keep 0002's behaviour exactly.
+  It needs the `room_accepts_new_players` SECURITY DEFINER helper because a
+  joiner is not yet a member and so cannot see the `rooms` row under its own RLS
+  (unlike 0005's self-leave policy, where the actor already is a member).
+- **Turn order is randomized once** (`row_number() over (order by random())`)
+  and never renumbered. Elimination removes players from the rotation; the
+  survivors keep the order they have been watching.
+- **`apply_turn_outcome` is the single resolution path.** Both a submitted
+  answer and a timeout go through it, so a timeout cannot grow its own copy of
+  the elimination rule. Same reasoning that made `advance_round_tx` the single
+  advancement path in 0006. It assumes its caller holds the room lock.
+- **`rounds_per_game()` does not apply here.** That was the race model's budget;
+  this mode ends on elimination. It is neither read nor changed.
+- Decay is `decayed_round_seconds(tier, starting_players, remaining, streak)` —
+  the single source of truth, callable standalone for testing, and read by the
+  client rather than recomputed (the Session 9b rule). Three stacking triggers,
+  all tunables in `decay_params()`:
+  - player count: starts at `remaining <= ceil(N/2)`, −10% then −5% per further
+    elimination, capped at −30%. **`N=2` is exempt entirely** (a 1v1 is already
+    a duel).
+  - streak stage 1: table-wide consecutive correct >= 5 → −10%.
+  - streak stage 2: >= 9 → an **additional** −15%, so −25% total, not a
+    replacement for stage 1.
+  - combined **multiplicatively**: `round(base * (1-player_cut) * (1-streak_cut))`,
+    then clamped ONCE, last, to `[min_seconds, base]`. Multiplicative so raising
+    a tunable can never reach a zero-second turn; one clamp so the order the
+    factors are applied in cannot matter. Don't sum them, don't clamp between.
+- Avatars are a fixed preset set in `avatar_keys()`, which the `room_players.avatar`
+  CHECK reads — so the list has one definition. `avatar` joins `display_name` as
+  the only client-updatable column, and is the one per-player column the engine
+  does NOT reset at game start.
+
 ## Naming note
 Local dev folder/npm package name may still say "spelling-race" from
 initial scaffolding — that's cosmetic and doesn't need to match the repo

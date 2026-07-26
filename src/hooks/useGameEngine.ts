@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { DifficultyTier, GameEngineApi, GameState, WordEntry } from "../types";
+import type {
+  DifficultyTier,
+  GameEngineApi,
+  GameOptions,
+  GameState,
+  WordEntry,
+} from "../types";
 import { wordsForTier } from "../data/words";
 
 // Fewer seconds per word as difficulty rises. Tune once you have real
@@ -35,6 +41,8 @@ const initialState: GameState = {
   bestStreak: 0,
   timeLeft: 0,
   wordsRemaining: 0,
+  untimed: false,
+  hideDefinition: false,
 };
 
 export function useGameEngine(): GameEngineApi {
@@ -49,7 +57,7 @@ export function useGameEngine(): GameEngineApi {
     }
   };
 
-  const advanceWord = useCallback((tier: DifficultyTier) => {
+  const advanceWord = useCallback((tier: DifficultyTier, untimed: boolean) => {
     const next = queueRef.current.shift();
     if (!next) {
       clearTimer();
@@ -60,7 +68,14 @@ export function useGameEngine(): GameEngineApi {
       ...s,
       status: "playing",
       currentWord: next,
-      timeLeft: ROUND_SECONDS[tier],
+      // Practice mode holds timeLeft at 0 rather than freezing it at the round
+      // length. That's deliberate on two counts: nothing renders a countdown in
+      // untimed mode anyway, and submitGuess's time bonus is `10 + timeLeft`, so
+      // a frozen full clock would silently hand out a perfect bonus on every
+      // word and make practice scores incomparable with timed ones. At 0 a
+      // practice word is worth its flat 10 points and the scoring code needs no
+      // special case at all.
+      timeLeft: untimed ? 0 : ROUND_SECONDS[tier],
       wordsRemaining: queueRef.current.length,
     }));
     // Speaking is NOT triggered here. RoundScreen announces the word (lead-in
@@ -71,11 +86,21 @@ export function useGameEngine(): GameEngineApi {
   }, []);
 
   const startGame = useCallback(
-    (tier: DifficultyTier) => {
+    (tier: DifficultyTier, options?: GameOptions) => {
+      const untimed = options?.untimed ?? false;
+      const hideDefinition = options?.hideDefinition ?? false;
       clearTimer();
       queueRef.current = shuffle(wordsForTier(tier));
-      setState({ ...initialState, tier, score: 0, streak: 0, bestStreak: 0 });
-      advanceWord(tier);
+      setState({
+        ...initialState,
+        tier,
+        score: 0,
+        streak: 0,
+        bestStreak: 0,
+        untimed,
+        hideDefinition,
+      });
+      advanceWord(tier, untimed);
     },
     [advanceWord]
   );
@@ -103,9 +128,10 @@ export function useGameEngine(): GameEngineApi {
     setState((s) => ({ ...s, status: "incorrect", streak: 0 }));
   }, []);
 
-  // Countdown timer while a round is active
+  // Countdown timer while a round is active. Practice mode never starts one, so
+  // there is no tick and no auto-incorrect-on-timeout — the word simply waits.
   useEffect(() => {
-    if (state.status !== "playing") return;
+    if (state.status !== "playing" || state.untimed) return;
     clearTimer();
     timerRef.current = window.setInterval(() => {
       setState((s) => {
@@ -117,15 +143,18 @@ export function useGameEngine(): GameEngineApi {
       });
     }, 1000);
     return clearTimer;
-  }, [state.status]);
+  }, [state.status, state.untimed]);
 
   // Move to the next word after feedback is shown
   useEffect(() => {
     if (state.status !== "correct" && state.status !== "incorrect") return;
     if (!state.tier) return;
-    const t = window.setTimeout(() => advanceWord(state.tier as DifficultyTier), FEEDBACK_DELAY_MS);
+    const t = window.setTimeout(
+      () => advanceWord(state.tier as DifficultyTier, state.untimed),
+      FEEDBACK_DELAY_MS
+    );
     return () => window.clearTimeout(t);
-  }, [state.status, state.tier, advanceWord]);
+  }, [state.status, state.tier, state.untimed, advanceWord]);
 
   useEffect(() => clearTimer, []);
 

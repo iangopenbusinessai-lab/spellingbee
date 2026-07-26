@@ -21,6 +21,16 @@ export function getAllBests(): Record<DifficultyTier, number> {
   };
 }
 
+const ALL_TIERS: DifficultyTier[] = ["easy", "medium", "hard", "expert"];
+
+/**
+ * Wipe every stored best score. Destructive to local data and irreversible —
+ * the settings panel gates it behind an in-panel confirm step.
+ */
+export function resetBests(): void {
+  for (const tier of ALL_TIERS) localStorage.removeItem(KEY_PREFIX + tier);
+}
+
 // Remembered display name for multiplayer, so returning players don't retype it.
 // Stored as room_players.display_name when they create/join a room.
 const DISPLAY_NAME_KEY = "spellingbee:displayName";
@@ -60,4 +70,34 @@ export function getVoiceRate(): number | null {
 
 export function setVoiceRate(rate: number): void {
   localStorage.setItem(VOICE_RATE_KEY, String(rate));
+}
+
+// Same voice: prefix as the name and rate above.
+const VOICE_VOLUME_KEY = "spellingbee:voice:volume";
+
+export function getVoiceVolume(): number | null {
+  const raw = localStorage.getItem(VOICE_VOLUME_KEY);
+  if (raw === null) return null;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : null;
+}
+
+export function setVoiceVolume(volume: number): void {
+  localStorage.setItem(VOICE_VOLUME_KEY, String(volume));
+}
+
+// --- motion ----------------------------------------------------------------
+// An in-app override that is INDEPENDENT of the OS prefers-reduced-motion the
+// stylesheet already honours. It can only ever add suppression: with this off,
+// a player whose OS asks for reduced motion still gets reduced motion.
+
+const REDUCE_MOTION_KEY = "spellingbee:reduceMotion";
+
+export function getReduceMotion(): boolean {
+  return localStorage.getItem(REDUCE_MOTION_KEY) === "true";
+}
+
+export function setReduceMotion(on: boolean): void {
+  if (on) localStorage.setItem(REDUCE_MOTION_KEY, "true");
+  else localStorage.removeItem(REDUCE_MOTION_KEY);
 }

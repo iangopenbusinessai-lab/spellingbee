@@ -1,5 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { DifficultyTier, GameEngineApi, GameState, RoundStatus, WordEntry } from "../types";
+import type {
+  DifficultyTier,
+  GameEngineApi,
+  GameOptions,
+  GameState,
+  RoundStatus,
+  WordEntry,
+} from "../types";
 import { getSupabase } from "../lib/supabaseClient";
 import { advanceRound, startGame as startGameFn, submitAnswer } from "../lib/rooms";
 import { secondsUntil, serverNow, syncServerClock } from "../lib/serverClock";
@@ -85,6 +92,12 @@ const IDLE_STATE: GameState = {
   bestStreak: 0,
   timeLeft: 0,
   wordsRemaining: 0,
+  // Session 13's per-game modifiers are singleplayer-only: a room's timing is
+  // enforced by the server round engine and the word is shared, so neither can
+  // be honoured per-client. Reported as false forever, which is exactly the
+  // behaviour every screen had before the fields existed.
+  untimed: false,
+  hideDefinition: false,
 };
 
 export function useMultiplayerGame(roomId: string | null): MultiplayerGame {
@@ -414,6 +427,8 @@ export function useMultiplayerGame(roomId: string | null): MultiplayerGame {
       wordsRemaining: constants
         ? Math.max(0, constants.roundsPerGame - room.current_round)
         : 0,
+      untimed: false,
+      hideDefinition: false,
     };
   }, [room, status, word, me, bestStreak, timeLeft, constants]);
 
@@ -423,9 +438,15 @@ export function useMultiplayerGame(roomId: string | null): MultiplayerGame {
    * Begin the game. The `tier` argument required by GameEngineApi is ignored:
    * a multiplayer room's tier is fixed when the room is created, and the server
    * reads it from the room row. Accepting it keeps the shared contract intact.
+   *
+   * Session 13's `options` is ignored for the same reason, one level up: the
+   * round clock is enforced by `advance_round_tx` on the server and the word is
+   * shared by everyone in the room, so a single client cannot opt itself out of
+   * either. Accepted and dropped rather than omitted, so this hook still
+   * satisfies GameEngineApi structurally.
    */
   const startGame = useCallback(
-    (_tier: DifficultyTier) => {
+    (_tier: DifficultyTier, _options?: GameOptions) => {
       if (!roomId) return;
       setError(null);
       void startGameFn(roomId).then((res) => {

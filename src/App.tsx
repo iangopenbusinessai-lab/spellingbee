@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { ArrowLeft } from "lucide-react";
 import "./App.css";
 import { ModeSelect } from "./components/ModeSelect";
-import { ThemeToggle } from "./components/ThemeToggle";
+import { SettingsPanel } from "./components/SettingsPanel";
 import { DifficultySelect } from "./components/DifficultySelect";
 import { RoundScreen } from "./components/RoundScreen";
 import { ResultsScreen } from "./components/ResultsScreen";
@@ -20,13 +20,13 @@ import { leaveRoom, type RoomInfo } from "./lib/rooms";
 type Mode = "single" | "multi" | null;
 
 // Presentational wrapper around what used to be a bare <div className="app-shell">.
-// It exists so the theme toggle is mounted once for every screen — mode select,
+// It exists so the settings panel is mounted once for every screen — mode select,
 // lobby, waiting room, round and results — instead of being pasted into each of
 // App's four return branches and drifting apart later.
-function Shell({ children }: { children: ReactNode }) {
+function Shell({ children, onBestsReset }: { children: ReactNode; onBestsReset?: () => void }) {
   return (
     <div className="app-shell">
-      <ThemeToggle />
+      <SettingsPanel onBestsReset={onBestsReset} />
       {children}
     </div>
   );
@@ -61,16 +61,22 @@ function App() {
 
   useEffect(() => {
     if (state.status !== "finished" || !state.tier) return;
+    // Practice runs don't set best scores. Scoring is `10 + timeLeft` per word
+    // and untimed holds timeLeft at 0, so a practice score isn't on the same
+    // scale as a timed one — recording it would let an untimed run occupy the
+    // best slot for a tier the player has never actually beaten under a clock.
+    // hide-definition runs DO count: that mode is harder, not easier.
+    if (state.untimed) return;
     const tier = state.tier;
     if (state.score > bests[tier]) {
       setBest(tier, state.score);
       setBests((prev) => ({ ...prev, [tier]: state.score }));
     }
-  }, [state.status, state.tier, state.score, bests]);
+  }, [state.status, state.tier, state.score, state.untimed, bests]);
 
   if (mode === null) {
     return (
-      <Shell>
+      <Shell onBestsReset={() => setBests(getAllBests())}>
         <ModeSelect onSingle={() => setMode("single")} onMulti={() => setMode("multi")} />
       </Shell>
     );
@@ -80,7 +86,7 @@ function App() {
     // Not in a room yet -> the lobby.
     if (!mpRoom) {
       return (
-        <Shell>
+        <Shell onBestsReset={() => setBests(getAllBests())}>
           <LobbyScreen
             onExitToModes={() => setMode(null)}
             onEnterRoom={(room, isHost) => setMpRoom({ room, isHost })}
@@ -92,7 +98,7 @@ function App() {
     // In a room. Which screen is decided entirely by the server-driven
     // GameState, exactly as the singleplayer branch below does.
     return (
-      <Shell>
+      <Shell onBestsReset={() => setBests(getAllBests())}>
         {mp.state.status === "idle" && (
           <div className="lobby">
             <WaitingRoom
@@ -136,7 +142,7 @@ function App() {
   // difficulty screen is the only addition, so players can get back to the mode
   // picker.
   return (
-    <Shell>
+    <Shell onBestsReset={() => setBests(getAllBests())}>
       {state.status === "idle" && (
         <div className="sp-home">
           <button className="back-link" onClick={() => setMode(null)}>
@@ -156,7 +162,16 @@ function App() {
           score={state.score}
           bestStreak={state.bestStreak}
           best={bests[state.tier]}
-          onReplay={() => state.tier && startGame(state.tier)}
+          // Replay keeps the modifiers the finished game was played with, so
+          // "Play again" repeats the same game rather than silently dropping
+          // back to timed-with-definition.
+          onReplay={() =>
+            state.tier &&
+            startGame(state.tier, {
+              untimed: state.untimed,
+              hideDefinition: state.hideDefinition,
+            })
+          }
           onMenu={resetToMenu}
         />
       )}

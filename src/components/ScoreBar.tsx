@@ -5,11 +5,14 @@ export function ScoreBar({
   streak,
   timeLeft,
   wordsRemaining,
+  untimed = false,
 }: {
   score: number;
   streak: number;
   timeLeft: number;
   wordsRemaining: number;
+  /** Practice mode: there is no clock, so show the mode instead of a dead 0. */
+  untimed?: boolean;
 }) {
   // Presentational only: notice when the streak goes UP so the counter can be
   // given a beat of visual weight. Derived entirely from the streak prop — no
@@ -37,10 +40,19 @@ export function ScoreBar({
         </span>
         <span className="stat-label">streak</span>
       </div>
-      <div className="stat timer" data-low={timeLeft <= 5}>
-        <span className="stat-value">{timeLeft}s</span>
-        <span className="stat-label">left</span>
-      </div>
+      {untimed ? (
+        // Replaces the countdown rather than leaving a frozen "0s left", which
+        // would read as a bug.
+        <div className="stat">
+          <span className="stat-value">∞</span>
+          <span className="stat-label">practice</span>
+        </div>
+      ) : (
+        <div className="stat timer" data-low={timeLeft <= 5}>
+          <span className="stat-value">{timeLeft}s</span>
+          <span className="stat-label">left</span>
+        </div>
+      )}
       <div className="stat">
         <span className="stat-value">{wordsRemaining}</span>
         <span className="stat-label">to go</span>

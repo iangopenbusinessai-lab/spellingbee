@@ -165,3 +165,16 @@ button {
     scroll-behavior: auto !important;
   }
 }
+
+/* The Session 13 in-app override. Same declarations, different trigger: it can
+   only ADD suppression on top of the OS preference above, never restore motion
+   the OS asked to remove. Written out rather than merged into one selector list
+   because a media query and an attribute selector can't share a block. */
+:root[data-reduce-motion="true"] *,
+:root[data-reduce-motion="true"] *::before,
+:root[data-reduce-motion="true"] *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+  scroll-behavior: auto !important;
+}

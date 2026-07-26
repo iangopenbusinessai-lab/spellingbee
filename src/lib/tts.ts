@@ -4,11 +4,20 @@
 // Zero cost, no API key, no audio files to host: the same narrator mechanic as
 // the Roblox game, using whatever voices the browser already has.
 
-import { getVoiceName, getVoiceRate, setVoiceName, setVoiceRate } from "./storage";
+import {
+  getVoiceName,
+  getVoiceRate,
+  getVoiceVolume,
+  setVoiceName,
+  setVoiceRate,
+  setVoiceVolume,
+} from "./storage";
 
 export const DEFAULT_RATE = 0.85;
 const MIN_RATE = 0.5;
 const MAX_RATE = 1.4;
+
+export const DEFAULT_VOLUME = 1;
 
 // Narrator lead-ins. Spoken as their own utterance before the word so there is
 // a real pause between the two, the way a human announcer sounds — a single
@@ -166,6 +175,17 @@ export function setRate(rate: number): void {
   setVoiceRate(Math.min(MAX_RATE, Math.max(MIN_RATE, rate)));
 }
 
+/** Utterance volume, 0-1. Clamped on both read and write. */
+export function getVolume(): number {
+  const saved = getVoiceVolume();
+  if (saved === null) return DEFAULT_VOLUME;
+  return Math.min(1, Math.max(0, saved));
+}
+
+export function setVolume(volume: number): void {
+  setVoiceVolume(Math.min(1, Math.max(0, volume)));
+}
+
 export function setVoiceOverride(name: string | null): void {
   setVoiceName(name);
 }
@@ -194,6 +214,9 @@ let generation = 0;
 function makeUtterance(text: string, rate: number, voice: SpeechSynthesisVoice | null) {
   const u = new SpeechSynthesisUtterance(text);
   u.rate = rate;
+  // Read per-utterance rather than captured once, so a volume change in the
+  // settings panel applies to the very next thing spoken.
+  u.volume = getVolume();
   if (voice) {
     u.voice = voice;
     u.lang = voice.lang;

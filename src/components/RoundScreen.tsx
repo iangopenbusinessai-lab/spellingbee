@@ -65,13 +65,21 @@ export function RoundScreen({
         streak={state.streak}
         timeLeft={state.timeLeft}
         wordsRemaining={state.wordsRemaining}
+        untimed={state.untimed}
       />
 
       {/* Mirrors what the narrator just said, so the audio and the screen agree. */}
       {leadIn && <p className="lead-in">{leadIn}</p>}
 
       <div className="prompt-card">
-        <p className="definition">"{state.currentWord.definition}"</p>
+        {/* Hide-definition mode: the definition is simply not rendered, so the
+            only clue is the audio. The replay button matters much more here,
+            which is why the card keeps its shape rather than collapsing. */}
+        {state.hideDefinition ? (
+          <p className="definition-hidden">Listen carefully — no definition this round.</p>
+        ) : (
+          <p className="definition">"{state.currentWord.definition}"</p>
+        )}
         {/* Replay re-announces: announceWord reuses the SAME lead-in for the
             same word, so hearing it again doesn't re-roll the phrase. */}
         <button

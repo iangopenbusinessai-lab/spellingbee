@@ -72,8 +72,31 @@ interface GameState {
   bestStreak: number;
   timeLeft: number;
   wordsRemaining: number;
+  untimed: boolean;         // Session 13
+  hideDefinition: boolean;  // Session 13
+}
+
+// Session 13. Optional and additive: omitting it is exactly the old behaviour.
+interface GameOptions {
+  untimed?: boolean;
+  hideDefinition?: boolean;
+}
+
+interface GameEngineApi {
+  state: GameState;
+  startGame: (tier: DifficultyTier, options?: GameOptions) => void;
+  submitGuess: (guess: string) => void;
+  skipWord: () => void;
+  resetToMenu: () => void;
 }
 ```
+
+`untimed` and `hideDefinition` describe how the CURRENT game is being played,
+not a stored preference — they're picked per run on the difficulty screen and
+live in `GameState` so screens render from state alone, like every other field.
+They are singleplayer-only: `useMultiplayerGame` accepts `options` and drops it
+(a room's clock is enforced by `advance_round_tx` and the word is shared, so one
+client cannot opt out of either) and always reports both as `false`.
 
 ## Current state
 Singleplayer is complete and deployed: difficulty select → timed word round
@@ -207,6 +230,31 @@ Rules this redesign must keep:
 - The streak pulse re-triggers by REMOUNTING the span via a changing `key`.
   A CSS animation does not replay on a re-render, only on a remount. It fires
   on an increase only — a streak reset deliberately doesn't animate.
+
+A **global settings panel** and a **redesigned difficulty screen** landed in
+Session 13. `SettingsPanel` is the single home for cross-cutting preferences —
+display name, voice/rate/volume, theme, an in-app reduce-motion override, and a
+reset-best-scores action behind a two-step in-panel confirm. It absorbed Session
+11's `VoiceSettings` and Session 12's floating `ThemeToggle`; **both components
+were deleted**, so don't go looking for them.
+
+Rules this session must keep:
+- Settings holds only genuinely global preferences. Per-run modifiers
+  (practice mode, hide definition) belong on the difficulty screen and travel
+  through `startGame`'s `GameOptions`, never through localStorage.
+- The in-app reduce-motion override can only ADD suppression on top of the OS
+  `prefers-reduced-motion`. There is deliberately no way to use it to force
+  animation back on for someone whose system asked for less.
+- Practice mode holds `timeLeft` at 0 rather than freezing it at the round
+  length. Scoring is `10 + timeLeft` per word, so a frozen full clock would
+  hand out a perfect time bonus on every word. At 0 the scoring code needs no
+  special case.
+- For the same reason, practice runs do NOT record best scores — an untimed
+  score isn't on the same scale as a timed one. `hideDefinition` runs DO count;
+  that mode is harder, not easier.
+- The tier bars are `clip-path` shapes, so the same Session 12 rule applies:
+  `getBoundingClientRect` overstates the tap target and `elementFromPoint`
+  probing is the only honest measurement.
 
 ## Naming note
 Local dev folder/npm package name may still say "spelling-race" from

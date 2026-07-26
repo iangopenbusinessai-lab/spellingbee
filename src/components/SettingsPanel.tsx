@@ -64,6 +64,10 @@ export function SettingsPanel({ onBestsReset }: { onBestsReset?: () => void }) {
       if (!active) return;
       setVoices(list);
       setVoicesLoading(false);
+      // Re-read: with no saved rate the default depends on which voice won, and
+      // that isn't known until the list exists. Without this the slider would
+      // sit at the generic default while a different rate was actually in use.
+      setRateState(getRate());
     });
     return () => {
       active = false;

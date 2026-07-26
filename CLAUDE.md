@@ -30,6 +30,15 @@ Deploys via `.github/workflows/deploy.yml` on every push to `main`
   field is genuinely needed everywhere, and update this file when you do.
 - All speech synthesis goes through `src/lib/tts.ts` — never call
   `window.speechSynthesis` directly from a component.
+- `DEFAULT_VOICE_NAME` ("Google UK English Male") is a chosen-by-ear hard
+  default, checked in `pickAutoVoice` BEFORE the quality heuristic. Don't
+  "simplify" it into a big score bonus: a bonus would still lose to some
+  future Neural/Premium voice on another platform, and the point is that this
+  exact voice wins wherever it exists. Priority is saved override > this >
+  heuristic. The heuristic itself is untouched and still covers every browser
+  that doesn't ship this voice. Its companion `DEFAULT_VOICE_RATE` (0.90)
+  applies only when this voice is the one actually in effect, which is why
+  `getRate()` has to consult `resolveVoice()` rather than return a constant.
 - `RoundScreen` is the ONLY place that announces a word, via
   `announceWord()`, for both the initial reveal and the replay button. The
   engine hooks deliberately do not speak: both modes render `RoundScreen`, so

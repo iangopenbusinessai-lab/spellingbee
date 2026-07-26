@@ -145,9 +145,29 @@ export function scoreVoice(v: SpeechSynthesisVoice): number {
   return score;
 }
 
-/** Best available English voice by the heuristic, or null if there are none. */
+// ---------------------------------------------------------------------------
+// Hard default voice.
+//
+// A specific chosen-by-ear default, checked BEFORE the scoring heuristic rather
+// than expressed as a big score bonus: a bonus would still lose to some future
+// "Neural"/"Premium" voice on another platform, and the point here is that this
+// exact voice wins wherever it exists.
+//
+// It sits BELOW a saved override in priority (resolveVoice checks localStorage
+// first) and ABOVE the heuristic, which is untouched and still handles every
+// browser that doesn't ship this voice.
+// ---------------------------------------------------------------------------
+export const DEFAULT_VOICE_NAME = "Google UK English Male";
+
+/** Rate used when DEFAULT_VOICE_NAME is the voice actually in effect. */
+export const DEFAULT_VOICE_RATE = 0.9;
+
+/** Best available English voice, or null if there are none. */
 export function pickAutoVoice(list: SpeechSynthesisVoice[] = voices): SpeechSynthesisVoice | null {
   if (list.length === 0) return null;
+  const preferred = list.find((v) => v.name === DEFAULT_VOICE_NAME);
+  if (preferred) return preferred;
+  // Not available in this browser — the original heuristic, unchanged.
   const english = list.filter((v) => /^en/i.test(v.lang));
   const pool = english.length > 0 ? english : list; // degrade rather than give up
   return pool.reduce((best, v) => (scoreVoice(v) > scoreVoice(best) ? v : best), pool[0]);
@@ -167,8 +187,13 @@ export function resolveVoice(list: SpeechSynthesisVoice[] = voices): SpeechSynth
 
 export function getRate(): number {
   const saved = getVoiceRate();
-  if (saved === null) return DEFAULT_RATE;
-  return Math.min(MAX_RATE, Math.max(MIN_RATE, saved));
+  if (saved !== null) return Math.min(MAX_RATE, Math.max(MIN_RATE, saved));
+  // No saved rate: the default depends on which voice is actually in effect,
+  // because DEFAULT_VOICE_NAME reads better slightly slower than the others.
+  // Before voices have loaded this resolves to null and falls back to
+  // DEFAULT_RATE; every speak path awaits loadVoices() first, so by the time an
+  // utterance is built the right answer is available.
+  return resolveVoice()?.name === DEFAULT_VOICE_NAME ? DEFAULT_VOICE_RATE : DEFAULT_RATE;
 }
 
 export function setRate(rate: number): void {
@@ -301,6 +326,20 @@ export function announceWord(word: string): string {
 /** The lead-in currently attached to a word, if it has been announced. */
 export function getLeadInFor(word: string): string | null {
   return word === lastAnnouncedWord ? lastLeadIn : null;
+}
+
+/**
+ * Stop anything currently being spoken and cancel a pending chained word.
+ *
+ * Bumping the generation matters as much as cancel() does: an announcement
+ * whose lead-in is cut off mid-flight would otherwise still fire its queued
+ * second half from the onend/timeout chain, and the word would be read out
+ * after the player has already left the round.
+ */
+export function stopSpeaking(): void {
+  if (!supported()) return;
+  generation++;
+  window.speechSynthesis.cancel();
 }
 
 /** Speak just the word, no intro. */

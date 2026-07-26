@@ -630,6 +630,43 @@
   color: var(--muted);
 }
 
+/* Mid-game quit, above the score bar so it reads as "leave this screen" rather
+   than as another in-round action next to Skip. */
+.round-exit {
+  display: flex;
+  justify-content: flex-start;
+  margin-bottom: 4px;
+  min-height: 44px;
+}
+
+.round-exit .back-link {
+  margin-bottom: 0;
+}
+
+.exit-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--bad);
+  border-radius: 10px;
+  text-align: left;
+}
+
+.exit-confirm-text {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.exit-confirm-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+
 .skip-btn {
   margin-top: 16px;
   background: none;

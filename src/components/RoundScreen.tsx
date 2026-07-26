@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from "react";
-import { Volume2 } from "lucide-react";
+import { ArrowLeft, Volume2 } from "lucide-react";
 import type { GameState } from "../types";
-import { announceWord } from "../lib/tts";
+import { announceWord, stopSpeaking } from "../lib/tts";
 import { ScoreBar } from "./ScoreBar";
 
 export function RoundScreen({
   state,
   onSubmit,
   onSkip,
+  onExit,
   awaitingOthers = false,
   resultNote = null,
   canSkip = true,
@@ -15,6 +16,10 @@ export function RoundScreen({
   state: GameState;
   onSubmit: (guess: string) => void;
   onSkip: () => void;
+  /** Abandon the game and go back. Optional: only rendered when a caller
+   *  supplies it, so multiplayer — where leaving a room has its own rules —
+   *  is unaffected. */
+  onExit?: () => void;
   // --- multiplayer-only, all optional so singleplayer is unchanged ----------
   /** I've answered but the round is still live: lock the input WITHOUT
    *  revealing the word, which others are still racing to spell. */
@@ -27,6 +32,10 @@ export function RoundScreen({
 }) {
   const [guess, setGuess] = useState("");
   const [leadIn, setLeadIn] = useState<string | null>(null);
+  // Two-step, matching the settings panel's reset: quitting throws away a run in
+  // progress, and this control sits next to a timed round where a mis-tap is
+  // easy. Same reason it isn't a window.confirm — that blocks the page.
+  const [confirmingExit, setConfirmingExit] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const wordId = state.currentWord?.id;
@@ -58,8 +67,38 @@ export function RoundScreen({
   const feedback =
     state.status === "correct" ? "correct" : state.status === "incorrect" ? "incorrect" : null;
 
+  function handleExit() {
+    // Leaving mid-announcement would otherwise keep the narrator talking over
+    // the menu, and the queued word would still arrive a second later.
+    stopSpeaking();
+    onExit?.();
+  }
+
   return (
     <div className="round-screen">
+      {onExit && (
+        <div className="round-exit">
+          {confirmingExit ? (
+            <div className="exit-confirm">
+              <span className="exit-confirm-text">Quit? This game won't be scored.</span>
+              <div className="exit-confirm-actions">
+                <button className="danger-btn" onClick={handleExit}>
+                  Quit game
+                </button>
+                <button className="secondary-btn" onClick={() => setConfirmingExit(false)}>
+                  Keep playing
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button className="back-link" onClick={() => setConfirmingExit(true)}>
+              <ArrowLeft size={15} aria-hidden />
+              Quit
+            </button>
+          )}
+        </div>
+      )}
+
       <ScoreBar
         score={state.score}
         streak={state.streak}

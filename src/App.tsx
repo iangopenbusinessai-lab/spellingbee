@@ -154,7 +154,15 @@ function App() {
       )}
 
       {(state.status === "playing" || state.status === "correct" || state.status === "incorrect") && (
-        <RoundScreen state={state} onSubmit={submitGuess} onSkip={skipWord} />
+        <RoundScreen
+          state={state}
+          onSubmit={submitGuess}
+          onSkip={skipWord}
+          // Singleplayer only. resetToMenu drops straight back to idle, so the
+          // run is discarded rather than finished — no best score is recorded,
+          // which is the point of quitting.
+          onExit={resetToMenu}
+        />
       )}
 
       {state.status === "finished" && state.tier && (

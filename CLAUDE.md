@@ -39,13 +39,19 @@ Deploys via `.github/workflows/deploy.yml` on every push to `main`
   that doesn't ship this voice. Its companion `DEFAULT_VOICE_RATE` (0.90)
   applies only when this voice is the one actually in effect, which is why
   `getRate()` has to consult `resolveVoice()` rather than return a constant.
-- `RoundScreen` is the ONLY place that announces a word, via
-  `announceWord()`, for both the initial reveal and the replay button. The
-  engine hooks deliberately do not speak: both modes render `RoundScreen`, so
-  one call site gives singleplayer and multiplayer identical narration and
-  keeps the spoken lead-in identical to the displayed one. Re-adding a
-  `speakWord()` call to `useGameEngine` or `useMultiplayerGame` would speak
-  every word twice.
+- `RoundScreen` is the ONLY place that speaks a word. The engine hooks
+  deliberately do not speak: both modes render `RoundScreen`, so one call site
+  gives singleplayer and multiplayer identical narration and keeps the spoken
+  lead-in identical to the displayed one. Adding a speak call to
+  `useGameEngine` or `useMultiplayerGame` would speak every word twice.
+  It uses two entry points, and the split is deliberate (Session 17):
+  - initial reveal -> `announceWord()`, which speaks a lead-in phrase, pauses,
+    then the word, and returns the phrase so the screen can show it;
+  - "Hear it again" -> `repeatWord()`, which speaks ONLY the word. On a replay
+    the lead-in is pure latency in front of the thing the player asked for.
+    `repeatWord` replaced the old unused `speakWord`; don't reintroduce it.
+  The on-screen `.lead-in` line is NOT cleared or re-rolled by a replay — it
+  still describes the announcement that introduced this word.
 - No component may assume there is exactly one player in a way that's hard
   to reverse later (e.g. hardcoded "your score" logic that can't extend to
   multiple players' scores once multiplayer exists).
@@ -353,6 +359,36 @@ node supabase/scripts/gen_seed.mjs supabase/migrations/0011_reseed_words.sql
 It is a pure upsert with no deletes, because `round_results.word_id` has a
 foreign key onto `words.id`; deletes aren't needed anyway since the id space is a
 superset of everything 0003 and 0010 inserted.
+
+A **draining timer bar** sits under the guess input (Session 17). It is shared
+by both modes for free, because both render `RoundScreen`.
+
+Rules this bar must keep:
+- It is a pure VIEW of `GameState.timeLeft`. No timer, interval, animation
+  clock or round-length constant lives in `RoundScreen` — adding one would put
+  a second source of truth next to the engine that already owns the countdown.
+- Its full scale comes from the largest `timeLeft` seen for the current word
+  (`spanRef`), NOT from a constant. That is the whole reason one bar can serve
+  both engines: singleplayer's `ROUND_SECONDS` and multiplayer's server-derived
+  `round_seconds()` each arrive as the opening value of `timeLeft`. Never
+  "improve" this by importing `ROUND_SECONDS` — the Session 9b rule forbids the
+  multiplayer path from ever seeing it. In multiplayer the peak can't overshoot
+  either, because `useMultiplayerGame` already clamps `timeLeft` to
+  `constants.roundSeconds`.
+- The smooth drain is a 1s linear CSS `transition` on width, nothing else. Both
+  engines tick in whole seconds; the transition is what makes that read as
+  motion. It costs a ≤1s visual lag behind the numeral, which is the accepted
+  price of not running a second clock.
+- The fill is keyed by word id so a new round SNAPS back to full instead of
+  animating upward.
+- Practice mode renders no bar at all (`untimed` holds `timeLeft` at 0, so a
+  track would just sit empty), and the bar is `aria-hidden` because `ScoreBar`
+  already exposes the same countdown as text.
+- Urgency is two threshold classes (`low` <=45%, `critical` <=20%), not a
+  computed gradient, so both themes stay readable and the colours stay tokens.
+  Under reduced motion the global `index.css` block collapses the transition
+  and the pulse; the bar then steps once a second and loses no information,
+  which is exactly the Session 12 guarantee.
 
 ## Naming note
 Local dev folder/npm package name may still say "spelling-race" from

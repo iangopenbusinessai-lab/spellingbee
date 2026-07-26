@@ -384,6 +384,49 @@
   animation: shake 0.4s ease-out;
 }
 
+/* ---------------------------------------------------------------------------
+   Draining timer bar (Session 17).
+
+   Sits under the input as a peripheral read of the clock the ScoreBar already
+   shows as a number — you can watch it without looking away from what you're
+   typing. Its width comes straight from GameState.timeLeft in RoundScreen; the
+   1s linear transition below is the ONLY thing making the drain continuous, so
+   both engines' whole-second ticks read as smooth motion without a second
+   timer existing anywhere.
+
+   That also makes it correct under reduced motion for free: the global block in
+   index.css collapses transition-duration, so the bar simply steps down once a
+   second and the urgency pulse stops. Nothing is hidden — the length and the
+   colour still carry the whole message. --------------------------------------- */
+.timer-track {
+  height: 6px;
+  margin-top: 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--border) 60%, transparent);
+  overflow: hidden;
+}
+
+.timer-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--honey-solid);
+  transition: width 1s linear, background-color 0.5s ease;
+}
+
+.timer-fill.low {
+  background: color-mix(in srgb, var(--bad) 55%, var(--honey-solid));
+}
+
+.timer-fill.critical {
+  background: var(--bad);
+  animation: timer-urgent 0.85s ease-in-out infinite;
+}
+
+/* Opacity only: a transform would fight the width transition on the same box. */
+@keyframes timer-urgent {
+  50% { opacity: 0.45; }
+}
+
 .feedback {
   margin-top: 12px;
   font-size: 15px;

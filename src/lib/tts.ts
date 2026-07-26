@@ -342,8 +342,19 @@ export function stopSpeaking(): void {
   window.speechSynthesis.cancel();
 }
 
-/** Speak just the word, no intro. */
-export function speakWord(word: string): void {
+/**
+ * Speak ONLY the word — no lead-in phrase, no pause.
+ *
+ * This is what the "hear it again" button calls. The lead-in exists to frame a
+ * word the player hasn't heard yet ("Your word is: …"); on a replay they've
+ * already heard it and the phrase is just latency between the tap and the thing
+ * they actually asked for. The on-screen lead-in is deliberately left alone —
+ * it still describes the announcement that introduced this word.
+ *
+ * speakAlone bumps the generation, so tapping replay mid-announcement also
+ * cancels the pending chained word rather than letting it fire afterwards.
+ */
+export function repeatWord(word: string): void {
   void speakAlone(word, getRate());
 }
 

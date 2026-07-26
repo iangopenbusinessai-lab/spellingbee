@@ -80,22 +80,38 @@ async function main() {
 
   // ---- 3. create a room I host + join it (positive path) -------------------
   line("\n=== 3. create room + join (insert policies) ===");
+  // The id is generated client-side and the insert asks for return=minimal —
+  // the same thing src/lib/rooms.ts does, and for a reason worth recording.
+  // Postgres applies the SELECT policy to an INSERT's RETURNING clause, and
+  // `rooms: members can read their room` (0002) requires membership, which the
+  // host does not have until the room_players insert below. So asking for
+  // return=representation here fails with 42501 "new row violates row-level
+  // security policy" even though the INSERT itself is perfectly legal. That is
+  // original 0002 behaviour, not a regression; this script simply never
+  // exercised it the way the app does.
+  const roomId = crypto.randomUUID();
   const roomRes = await fetch(`${URL}/rest/v1/rooms`, {
     method: "POST",
-    headers: { ...authed, Prefer: "return=representation" },
-    body: JSON.stringify({ code: CODE, tier: "easy", host_id: userId }),
+    headers: { ...authed, Prefer: "return=minimal" },
+    body: JSON.stringify({ id: roomId, code: CODE, tier: "easy", host_id: userId }),
   });
-  const room = await roomRes.json();
-  const roomId = Array.isArray(room) ? room[0]?.id : room?.id;
-  line(`create room  HTTP ${roomRes.status}  code=${CODE}  room_id=${roomId ?? JSON.stringify(room)}`);
-  if (!roomId) { line("Room creation failed; cannot run write-rejection tests."); process.exit(1); }
+  line(`create room  HTTP ${roomRes.status}  code=${CODE}  room_id=${roomId}`);
+  if (roomRes.status >= 300) {
+    line(`Room creation failed: ${await roomRes.text()}`);
+    process.exit(1);
+  }
 
+  // return=minimal for the same reason, one step further: the room_players
+  // SELECT policy calls is_room_member(), which queries room_players itself.
+  // During this INSERT's RETURNING the new row is not yet visible to that
+  // separate query, so membership reads as false and the RETURNING is refused —
+  // again with the INSERT itself being entirely legal.
   const joinRes = await fetch(`${URL}/rest/v1/room_players`, {
     method: "POST",
-    headers: { ...authed, Prefer: "return=representation" },
+    headers: { ...authed, Prefer: "return=minimal" },
     body: JSON.stringify({ room_id: roomId, player_id: userId, display_name: "verify-bot" }),
   });
-  line(`join room    HTTP ${joinRes.status}  ${await joinRes.text()}`);
+  line(`join room    HTTP ${joinRes.status}  ${(await joinRes.text()) || "(no body, return=minimal)"}`);
 
   // ---- 4. rooms.status update must be REJECTED -----------------------------
   line("\n=== 4. client update rooms.status (must be rejected) ===");

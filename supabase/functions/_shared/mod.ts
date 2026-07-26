@@ -98,6 +98,18 @@ const STATUS_BY_ERROR: Record<string, number> = {
   round_expired: 409,
   round_not_started: 409,
   no_words_for_tier: 409,
+
+  // Elimination mode (Session 19, errors raised by the 0012 functions). Purely
+  // ADDITIVE: every key above keeps its status, so the three race functions
+  // behave identically whether or not they are ever redeployed against this file.
+  eliminated: 403,            // barred from acting for the rest of the game
+  wrong_mode: 409,            // elimination call against a race room, or vice versa
+  not_your_turn: 409,         // resolves on its own as the rotation moves — a
+                              // state conflict, not a permissions problem
+  turn_already_resolved: 409,
+  turn_not_started: 409,      // also covers "still inside the feedback window"
+  turn_expired: 409,
+  turn_in_progress: 409,
 };
 
 export function statusForError(error: string): number {

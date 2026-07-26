@@ -451,6 +451,73 @@ Rules this engine must keep:
   the only client-updatable column, and is the one per-player column the engine
   does NOT reset at game start.
 
+**Elimination mode is reachable over HTTP** since Session 19: edge functions
+`start-elimination-game` and `submit-turn`, migrations `0013` (widened
+`get_room_by_code`), `0014` (elimination sweeper) and `0015` (race-mode guards),
+all deployed and verified live by
+`supabase/scripts/verify_elimination_functions.mjs` (7 sections, all passing).
+Still **no `src/` changes** — Session 20 wires up the client and the spectator
+view.
+
+Rules this session must keep:
+- The two new functions are `auth + HTTP` and nothing else, like every 9a
+  function. Host-ness, mode, status, player count, turn ownership, correctness,
+  timing, lives, elimination and the next turn's duration are ALL decided inside
+  the 0012 SQL. Notably the minimum player count is never named in TypeScript.
+  A precondition re-checked in the edge function would be a second, racy copy of
+  a rule the SQL already enforces inside its row lock.
+- `submit-turn` passes `next_round_seconds` straight through from
+  `submit_turn_answer_tx`. Never recompute a duration from `decay_params()` in
+  TypeScript — that would be a second implementation of the three-trigger curve
+  in a language that cannot see the room's state.
+- **Two sweepers, not one.** `sweep_expired_rounds()` (0009) is untouched;
+  `sweep_expired_turns()` (0014) is a separate function on a separate 5s
+  `pg_cron` job. Folding them together would need a branch on `mode` inside a
+  sweeper, which is exactly the "no game rules in the sweep" rule 0009 sets.
+- `sweep_expired_turns()` has **no deadline predicate**, deliberately, and this
+  is the one place a session brief and 0009's stated rule disagreed — 0009 wins.
+  A turn's deadline is `turn_started_at` + that turn's own frozen
+  `round_seconds` + `late_grace_ms()`, where the duration came from the decay
+  curve; restating that in a scheduler would put a copy of the decay contract
+  somewhere that silently drifts the day `decay_params()` is retuned.
+  `timeout_turn_tx` is already a cheap no-op for a turn that isn't due.
+- It passes **no acting player** — `timeout_turn_tx`'s `p_caller` is optional
+  precisely for this. 0009 had to invent an actor to satisfy `advance_round_tx`'s
+  membership guard; don't copy that here.
+- **0015 closed a real cross-mode hole, found by actually testing the direction
+  nobody had.** The 0012 functions all reject non-elimination rooms, but 0006
+  predated `rooms.mode` and rejected nothing, and its endpoints are public.
+  Worst case was `advance_round_tx`: its "is the round over?" check compares
+  `now()` against `round_started_at + limit`, which is NULL in an elimination
+  room, so the comparison was NULL and the guard **failed open** — any member
+  could advance another player's turn, and the advance wrote `round_started_at`,
+  putting the room into both sweepers at once. All three race functions now
+  check `mode = 'race'` first. For every real race room this is invariably true,
+  so 9a behaviour is unchanged; only the previously-undefined cross-mode case
+  differs. When adding an engine, guard BOTH directions.
+- Avatars needed no new code: the `room_players.avatar` CHECK against
+  `avatar_keys()` validates, the column default supplies `'bee'`, and joining is
+  a plain client INSERT with no edge function to add a check to. Re-validating
+  the preset list in TypeScript would duplicate the constraint. Verified on the
+  real join path, including that an off-list key is refused on INSERT and UPDATE.
+- `get_room_by_code()` needed a DROP and recreate, not `create or replace` —
+  for a `RETURNS TABLE` function the column list is the OUT parameters, so
+  replacing in place fails with 42P13. DROP also discards the grants, so they
+  must be reissued in the same migration.
+- Verification scripts reuse a **cached pool of anonymous users**
+  (`POOL_SIZE`, cached in the OS temp dir). Supabase rate-limits anonymous
+  sign-ups per IP per hour and a script that signs up fresh users per section
+  exhausts it and then fails halfway, which reads as a verification failure but
+  is only a harness limit. Save the cache after every acquisition, not at the
+  end, or a rate-limited run throws away the identities it did get.
+- `verify.mjs` (Session 7b) was repaired, not changed in intent: its room and
+  player INSERTs asked for `return=representation`, and Postgres applies the
+  SELECT policy to an INSERT's RETURNING clause. The host is not yet a member
+  when creating a room, and `is_room_member()` cannot see the row being inserted
+  by that very statement, so both RETURNINGs were refused with 42501 while the
+  INSERTs themselves were perfectly legal. It now uses a client-side id and
+  `return=minimal`, which is what `src/lib/rooms.ts` always did.
+
 ## Naming note
 Local dev folder/npm package name may still say "spelling-race" from
 initial scaffolding — that's cosmetic and doesn't need to match the repo

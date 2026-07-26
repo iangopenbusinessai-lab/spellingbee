@@ -1,4 +1,4 @@
-import type { DifficultyTier } from "../types";
+import { TIER_ORDER, type DifficultyTier } from "../types";
 
 const KEY_PREFIX = "spellingbee:best:";
 
@@ -12,23 +12,22 @@ export function setBest(tier: DifficultyTier, score: number): void {
   localStorage.setItem(KEY_PREFIX + tier, String(score));
 }
 
+// Built from TIER_ORDER rather than a second hand-written list, so adding a
+// tier can't leave a gap here. Existing keys are untouched by the Session 15
+// expansion: the four original tiers kept their exact string values.
 export function getAllBests(): Record<DifficultyTier, number> {
-  return {
-    easy: getBest("easy"),
-    medium: getBest("medium"),
-    hard: getBest("hard"),
-    expert: getBest("expert"),
-  };
+  return Object.fromEntries(TIER_ORDER.map((t) => [t, getBest(t)])) as Record<
+    DifficultyTier,
+    number
+  >;
 }
-
-const ALL_TIERS: DifficultyTier[] = ["easy", "medium", "hard", "expert"];
 
 /**
  * Wipe every stored best score. Destructive to local data and irreversible —
  * the settings panel gates it behind an in-panel confirm step.
  */
 export function resetBests(): void {
-  for (const tier of ALL_TIERS) localStorage.removeItem(KEY_PREFIX + tier);
+  for (const tier of TIER_ORDER) localStorage.removeItem(KEY_PREFIX + tier);
 }
 
 // Remembered display name for multiplayer, so returning players don't retype it.

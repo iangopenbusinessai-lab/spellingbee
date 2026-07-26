@@ -10,12 +10,7 @@ import {
   type RoomInfo,
 } from "../lib/rooms";
 
-const TIER_LABEL: Record<RoomInfo["tier"], string> = {
-  easy: "Easy",
-  medium: "Medium",
-  hard: "Hard",
-  expert: "Expert",
-};
+import { TIER_META } from "../lib/tiers";
 
 export function WaitingRoom({
   room,
@@ -92,7 +87,7 @@ export function WaitingRoom({
       <div className="room-code-block">
         <span className="room-code-label">Room code — share to invite</span>
         <span className="room-code">{room.code}</span>
-        <span className="room-tier">{TIER_LABEL[room.tier]} words</span>
+        <span className="room-tier">{TIER_META[room.tier].label} words</span>
       </div>
 
       <div className="player-list">

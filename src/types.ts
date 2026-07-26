@@ -1,4 +1,31 @@
-export type DifficultyTier = "easy" | "medium" | "hard" | "expert";
+// Eight tiers, ordered easiest to hardest (Session 15). The original four keep
+// their exact string values even though their relative position shifted — that
+// is what lets existing "spellingbee:best:<tier>" localStorage entries and
+// existing Postgres rows survive without a data migration. Do not rename them.
+//
+// TIER_ORDER below is the single source of ordering; nothing should hardcode a
+// tier list alongside it.
+export type DifficultyTier =
+  | "novice"
+  | "easy"
+  | "building"
+  | "medium"
+  | "advanced"
+  | "hard"
+  | "expert"
+  | "master";
+
+/** Easiest to hardest. The only place the ordering is written down. */
+export const TIER_ORDER: readonly DifficultyTier[] = [
+  "novice",
+  "easy",
+  "building",
+  "medium",
+  "advanced",
+  "hard",
+  "expert",
+  "master",
+] as const;
 
 export interface WordEntry {
   id: string;

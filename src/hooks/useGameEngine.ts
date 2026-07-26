@@ -8,13 +8,26 @@ import type {
 } from "../types";
 import { wordsForTier } from "../data/words";
 
-// Fewer seconds per word as difficulty rises. Tune once you have real
-// playtesting data — this is a starting guess, not a balanced curve.
+// Seconds per word. MUST stay in sync with public.round_seconds() in
+// supabase/migrations/0010 — the client renders the countdown, the server
+// enforces it, and 0010 is the single source of truth the multiplayer path
+// reads by RPC rather than duplicating.
+//
+// The curve descends smoothly to `hard` and then FLATTENS: expert and master
+// both sit at hard's 13s. That is deliberate (Session 15) — the top three tiers
+// take their difficulty from word content, not from extra time pressure. Do not
+// tighten expert/master below 13.
+//
+// Note this RAISED expert from its previous 11s. easy/medium/hard are unchanged.
 const ROUND_SECONDS: Record<DifficultyTier, number> = {
+  novice: 22,
   easy: 20,
+  building: 18,
   medium: 16,
+  advanced: 14,
   hard: 13,
-  expert: 11,
+  expert: 13,
+  master: 13,
 };
 
 const FEEDBACK_DELAY_MS = 1100;

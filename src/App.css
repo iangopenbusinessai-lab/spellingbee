@@ -112,10 +112,16 @@
   min-height: 1.2em;
 }
 
+/* Eight bars, not four (Session 15). Kept as one plain page-scrolling stack:
+   an inner scroll container would hide the hardest tiers behind a scrollbar
+   inside a page that already scrolls, which is worse than a slightly long page.
+   Instead the bars got shorter (64px -> 54px) and the gap tighter (8px -> 6px),
+   which fits all eight in ~474px — under one phone viewport once the header is
+   accounted for, and still well over the 44px tap floor. */
 .tier-stack {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
   max-width: 420px;
   margin: 0 auto;
 }
@@ -135,10 +141,10 @@
   position: relative;
   width: 100%;
   min-width: 0;
-  min-height: 64px;
+  min-height: 54px;
   border: none;
   /* Horizontal padding clears the points so text never sits in the taper. */
-  padding: 10px 30px;
+  padding: 8px 28px;
   background: var(--tier-edge);
   color: var(--tier-ink, var(--text));
   clip-path: var(--hex-bar);
@@ -187,9 +193,19 @@
   inset: 5px;
 }
 
+.tier-bar[data-tier="novice"] {
+  --tier-fill: var(--tier-novice-fill);
+  --tier-edge: var(--tier-novice-edge);
+}
+
 .tier-bar[data-tier="easy"] {
   --tier-fill: var(--tier-easy-fill);
   --tier-edge: var(--tier-easy-edge);
+}
+
+.tier-bar[data-tier="building"] {
+  --tier-fill: var(--tier-building-fill);
+  --tier-edge: var(--tier-building-edge);
 }
 
 .tier-bar[data-tier="medium"] {
@@ -197,16 +213,29 @@
   --tier-edge: var(--tier-medium-edge);
 }
 
+.tier-bar[data-tier="advanced"] {
+  --tier-fill: var(--tier-advanced-fill);
+  --tier-edge: var(--tier-advanced-edge);
+}
+
 .tier-bar[data-tier="hard"] {
   --tier-fill: var(--tier-hard-fill);
   --tier-edge: var(--tier-hard-edge);
 }
 
-/* Expert takes the honey accent as its actual fill — the top of the ramp. */
+/* Expert takes the honey accent as its actual fill; master goes past it into
+   ember. Both are solid rather than tinted — the visual break that marks the
+   top two tiers apart from the graded six above them. */
 .tier-bar[data-tier="expert"] {
   --tier-fill: var(--tier-expert-fill);
   --tier-edge: var(--tier-expert-edge);
   --tier-ink: var(--tier-expert-ink);
+}
+
+.tier-bar[data-tier="master"] {
+  --tier-fill: var(--tier-master-fill);
+  --tier-edge: var(--tier-master-edge);
+  --tier-ink: var(--tier-master-ink);
 }
 
 .tier-bar-main {
@@ -220,17 +249,22 @@
   display: block;
   font-family: var(--font-display);
   font-weight: 700;
-  font-size: 18px;
+  font-size: 16px;
   line-height: 1.1;
   color: inherit;
 }
 
 .tier-blurb {
   display: block;
-  font-size: 12px;
-  line-height: 1.25;
+  font-size: 11px;
+  line-height: 1.2;
   opacity: 0.78;
   color: inherit;
+  /* Eight bars means eight blurbs; a wrap would push the stack past a phone
+     screen, so the blurb truncates rather than growing the bar. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .tier-best {

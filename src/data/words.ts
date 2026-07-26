@@ -126,6 +126,65 @@ export const WORD_BANK: WordEntry[] = [
   { id: "x28", word: "xenophobia", tier: "expert", definition: "An intense fear or dislike of people from other countries" },
   { id: "x29", word: "yttrium", tier: "expert", definition: "A silvery metallic chemical element used in certain alloys and lasers" },
   { id: "x30", word: "zeitgeist", tier: "expert", definition: "The defining mood or spirit of a particular period in history" },
+
+  // =========================================================================
+  // PLACEHOLDER CONTENT — Session 15. NOT curated, NOT balanced, NOT final.
+  //
+  // The four tiers added in Session 15 (novice / building / advanced / master)
+  // exist here only so the game does not break when someone picks them: 8 words
+  // each instead of the 30 the original tiers carry. They were written to be
+  // roughly plausible for their slot, but no frequency or grade-level sourcing
+  // went into them.
+  //
+  // Session 16's word-sourcing pipeline REPLACES all of this with ~150 real
+  // words per tier. Delete this whole block then — don't try to grow it by hand.
+  //
+  // Consequences while these stand, both already handled rather than bugs:
+  //   - a singleplayer run on one of these tiers is 8 words long, not 30;
+  //   - a multiplayer room on one of them ends when the words run out, which
+  //     advance_round_tx already treats as game over (0006: `v_word_id is null
+  //     or current_round >= rounds_per_game()`), so it finishes at 8 of 10.
+  // =========================================================================
+
+  // novice — placeholder
+  { id: "n1", word: "cat", tier: "novice", definition: "A small furry pet that purrs" },
+  { id: "n2", word: "sun", tier: "novice", definition: "The bright star that lights the day" },
+  { id: "n3", word: "book", tier: "novice", definition: "Pages bound together for reading" },
+  { id: "n4", word: "milk", tier: "novice", definition: "A white drink that comes from cows" },
+  { id: "n5", word: "tree", tier: "novice", definition: "A tall plant with a trunk and branches" },
+  { id: "n6", word: "hand", tier: "novice", definition: "The part of your body at the end of your arm" },
+  { id: "n7", word: "door", tier: "novice", definition: "What you open to go into a room" },
+  { id: "n8", word: "fish", tier: "novice", definition: "An animal that lives and swims in water" },
+
+  // building — placeholder
+  { id: "b1", word: "puzzle", tier: "building", definition: "A game or problem that tests your cleverness" },
+  { id: "b2", word: "market", tier: "building", definition: "A place where goods are bought and sold" },
+  { id: "b3", word: "silent", tier: "building", definition: "Making no sound at all" },
+  { id: "b4", word: "journey", tier: "building", definition: "A trip from one place to another" },
+  { id: "b5", word: "picture", tier: "building", definition: "A drawing, painting or photograph" },
+  { id: "b6", word: "kitchen", tier: "building", definition: "The room where food is prepared" },
+  { id: "b7", word: "monster", tier: "building", definition: "A large frightening imaginary creature" },
+  { id: "b8", word: "whisper", tier: "building", definition: "To speak very quietly" },
+
+  // advanced — placeholder
+  { id: "a1", word: "corridor", tier: "advanced", definition: "A long passage inside a building" },
+  { id: "a2", word: "reliable", tier: "advanced", definition: "Able to be trusted to do what is expected" },
+  { id: "a3", word: "ceremony", tier: "advanced", definition: "A formal event held to mark an occasion" },
+  { id: "a4", word: "gradual", tier: "advanced", definition: "Happening slowly over a period of time" },
+  { id: "a5", word: "opponent", tier: "advanced", definition: "Someone you compete against" },
+  { id: "a6", word: "sincere", tier: "advanced", definition: "Genuine and free from pretence" },
+  { id: "a7", word: "turbulent", tier: "advanced", definition: "Marked by violent or unsteady movement" },
+  { id: "a8", word: "vacancy", tier: "advanced", definition: "A position or space that is unoccupied" },
+
+  // master — placeholder
+  { id: "z1", word: "chiaroscuro", tier: "master", definition: "The treatment of light and shade in a work of art" },
+  { id: "z2", word: "eleemosynary", tier: "master", definition: "Relating to or dependent on charity" },
+  { id: "z3", word: "logorrhoea", tier: "master", definition: "Excessive and often incoherent talkativeness" },
+  { id: "z4", word: "prestidigitation", tier: "master", definition: "Skilful sleight of hand performed as entertainment" },
+  { id: "z5", word: "sesquipedalian", tier: "master", definition: "Given to using very long words" },
+  { id: "z6", word: "usufruct", tier: "master", definition: "The legal right to use another's property short of destroying it" },
+  { id: "z7", word: "vicissitude", tier: "master", definition: "A change of circumstance, typically an unwelcome one" },
+  { id: "z8", word: "zugzwang", tier: "master", definition: "A chess position where any move a player makes worsens it" },
 ];
 
 export function wordsForTier(tier: WordEntry["tier"]): WordEntry[] {

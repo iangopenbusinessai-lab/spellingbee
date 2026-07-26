@@ -60,7 +60,12 @@ Deploys via `.github/workflows/deploy.yml` on every push to `main`
 
 ## Core types (do not change without updating this file)
 ```ts
-type DifficultyTier = "easy" | "medium" | "hard" | "expert";
+// Eight tiers since Session 15, ordered easiest to hardest. TIER_ORDER in
+// types.ts is the single source of the ordering — never hardcode a tier list
+// beside it, and use TIER_META/TIERS in src/lib/tiers.ts for labels.
+type DifficultyTier =
+  | "novice" | "easy" | "building" | "medium"
+  | "advanced" | "hard" | "expert" | "master";
 
 interface WordEntry {
   id: string;
@@ -264,6 +269,54 @@ Rules this session must keep:
 - The tier bars are `clip-path` shapes, so the same Session 12 rule applies:
   `getBoundingClientRect` overstates the tap target and `elementFromPoint`
   probing is the only honest measurement.
+
+**Eight difficulty tiers** since Session 15 (migration `0010_eight_tiers.sql`,
+applied and verified live by `supabase/scripts/verify_tiers.mjs`).
+
+Order, easiest to hardest, with round length:
+
+| tier     | seconds | notes                                  |
+|----------|---------|----------------------------------------|
+| novice   | 22      | new                                    |
+| easy     | 20      | unchanged anchor                       |
+| building | 18      | new                                    |
+| medium   | 16      | unchanged anchor                       |
+| advanced | 14      | new                                    |
+| hard     | 13      | unchanged anchor                       |
+| expert   | 13      | **raised from 11s**                    |
+| master   | 13      | new                                    |
+
+Rules this scheme must keep:
+- The original four keep their EXACT string values (`easy`/`medium`/`hard`/
+  `expert`) even though their relative position shifted. That is the only
+  reason no data migration was needed: existing `spellingbee:best:<tier>`
+  localStorage keys and existing `words.tier`/`rooms.tier` rows stayed valid.
+  Never rename them.
+- The curve descends smoothly to `hard` and then FLATTENS — expert and master
+  sit at hard's 13s. Deliberate: the top three tiers get their difficulty from
+  word content, not extra time pressure. Do not tighten them below 13.
+- `ROUND_SECONDS` in `useGameEngine.ts` and `public.round_seconds()` in 0010
+  must stay in sync, and the multiplayer path must keep reading the SQL
+  function by RPC rather than importing the client constant (the Session 9b
+  rule). Verified live: an expert room rendered a 13s countdown from the server.
+- `TIER_ORDER` (types.ts) is the one place the ordering lives; `TIER_META` /
+  `TIERS` (src/lib/tiers.ts) is the one place labels live. Before Session 15
+  the difficulty screen, the lobby picker and the waiting room each kept their
+  own list — don't reintroduce that.
+- Eight bars stay ONE page-scrolling stack. Bars went 64px -> 54px and the gap
+  8px -> 6px so all eight fit ~474px, inside a phone viewport. An inner scroll
+  container was rejected: it would hide the hardest tiers behind a scrollbar
+  inside a page that already scrolls.
+
+⚠️ **PLACEHOLDER CONTENT.** `novice`, `building`, `advanced` and `master` have
+only **8 placeholder words each** (vs 30 for the original four), in both
+`src/data/words.ts` and migration 0010. They are not curated or balanced.
+Session 16's word-sourcing pipeline replaces them with ~150 real words per tier
+and should regenerate the seed wholesale — 0003 was left untouched because it is
+already applied, so the bank currently spans 0003 + 0010. Consequences, both
+already correct rather than bugs: a singleplayer run on those tiers is 8 words
+long, and a multiplayer room on them finishes at 8 of `rounds_per_game()`=10
+because `advance_round_tx` ends the game when `pick_unused_word` returns null.
 
 ## Naming note
 Local dev folder/npm package name may still say "spelling-race" from

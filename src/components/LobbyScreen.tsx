@@ -5,12 +5,7 @@ import { useSupabaseUser } from "../hooks/useSupabaseUser";
 import { getDisplayName, setDisplayName as persistDisplayName } from "../lib/storage";
 import { createRoom, joinRoomByCode, type RoomInfo } from "../lib/rooms";
 
-const TIERS: { id: DifficultyTier; label: string }[] = [
-  { id: "easy", label: "Easy" },
-  { id: "medium", label: "Medium" },
-  { id: "hard", label: "Hard" },
-  { id: "expert", label: "Expert" },
-];
+import { TIERS } from "../lib/tiers";
 
 // The lobby now only gets you INTO a room; the room itself (waiting room, then
 // the game) is owned by App, which runs useMultiplayerGame for it. That keeps

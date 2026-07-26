@@ -1,13 +1,7 @@
 import { useState } from "react";
 import { EyeOff, Timer } from "lucide-react";
 import type { DifficultyTier, GameOptions } from "../types";
-
-const TIERS: { id: DifficultyTier; label: string; blurb: string }[] = [
-  { id: "easy", label: "Easy", blurb: "Common everyday words" },
-  { id: "medium", label: "Medium", blurb: "Trickier spellings" },
-  { id: "hard", label: "Hard", blurb: "Multi-syllable words" },
-  { id: "expert", label: "Expert", blurb: "Competition-level" },
-];
+import { TIERS } from "../lib/tiers";
 
 export function DifficultySelect({
   bests,
@@ -55,7 +49,7 @@ export function DifficultySelect({
               : "Timed, with a definition for every word."}
       </p>
 
-      {/* Layered strata, easy at the top down to expert. */}
+      {/* Layered strata, novice at the top down to master. */}
       <div className="tier-stack">
         {TIERS.map((t) => (
           <button

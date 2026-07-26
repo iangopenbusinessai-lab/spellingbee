@@ -41,15 +41,26 @@
 
   /* Escalating tier fills — calm sage, amber, burnt orange, then Expert
      taking the honey accent itself so it reads as the top of the ramp. */
+  --tier-novice-fill: linear-gradient(155deg, #232b23, #191e19);
+  --tier-novice-edge: #3d5340;
   --tier-easy-fill: linear-gradient(155deg, #27311f, #1c2417);
   --tier-easy-edge: #48603a;
+  --tier-building-fill: linear-gradient(155deg, #2f3520, #222717);
+  --tier-building-edge: #61722f;
   --tier-medium-fill: linear-gradient(155deg, #3b2f1a, #291f12);
   --tier-medium-edge: #85661f;
+  --tier-advanced-fill: linear-gradient(155deg, #423019, #2e2011);
+  --tier-advanced-edge: #96631f;
   --tier-hard-fill: linear-gradient(155deg, #48301a, #301c0f);
   --tier-hard-edge: #a35f22;
+  /* The top two are SOLID saturated fills rather than muted tints — that jump
+     is what separates them from the six below at a glance. */
   --tier-expert-fill: linear-gradient(155deg, #edae47, #b97c1e);
   --tier-expert-edge: #f2c268;
   --tier-expert-ink: #241a09;
+  --tier-master-fill: linear-gradient(155deg, #c4551f, #8e3a10);
+  --tier-master-edge: #e0742f;
+  --tier-master-ink: #fff1e4;
 }
 
 /* The light palette is written twice on purpose: once as the pre-JS fallback
@@ -76,15 +87,24 @@
 
     --shadow: 0 6px 18px rgba(90, 66, 20, 0.12);
 
+    --tier-novice-fill: linear-gradient(155deg, #eef3ea, #dfe8da);
+    --tier-novice-edge: #aabfa2;
     --tier-easy-fill: linear-gradient(155deg, #ecf2e1, #dae7ca);
     --tier-easy-edge: #9cb884;
+    --tier-building-fill: linear-gradient(155deg, #f3f5da, #e6ebbd);
+    --tier-building-edge: #b5c063;
     --tier-medium-fill: linear-gradient(155deg, #fcefd0, #f3dfaa);
     --tier-medium-edge: #d3ad4b;
+    --tier-advanced-fill: linear-gradient(155deg, #fce5c4, #f6d39d);
+    --tier-advanced-edge: #d69b3c;
     --tier-hard-fill: linear-gradient(155deg, #fbdfc1, #f4c691);
     --tier-hard-edge: #d4842f;
     --tier-expert-fill: linear-gradient(155deg, #f0ad42, #d4841a);
     --tier-expert-edge: #a96712;
     --tier-expert-ink: #2b2115;
+    --tier-master-fill: linear-gradient(155deg, #d2591f, #a83c11);
+    --tier-master-edge: #7d2b0b;
+    --tier-master-ink: #fff1e4;
   }
 }
 
@@ -107,15 +127,24 @@
 
   --shadow: 0 6px 18px rgba(90, 66, 20, 0.12);
 
+  --tier-novice-fill: linear-gradient(155deg, #eef3ea, #dfe8da);
+  --tier-novice-edge: #aabfa2;
   --tier-easy-fill: linear-gradient(155deg, #ecf2e1, #dae7ca);
   --tier-easy-edge: #9cb884;
+  --tier-building-fill: linear-gradient(155deg, #f3f5da, #e6ebbd);
+  --tier-building-edge: #b5c063;
   --tier-medium-fill: linear-gradient(155deg, #fcefd0, #f3dfaa);
   --tier-medium-edge: #d3ad4b;
+  --tier-advanced-fill: linear-gradient(155deg, #fce5c4, #f6d39d);
+  --tier-advanced-edge: #d69b3c;
   --tier-hard-fill: linear-gradient(155deg, #fbdfc1, #f4c691);
   --tier-hard-edge: #d4842f;
   --tier-expert-fill: linear-gradient(155deg, #f0ad42, #d4841a);
   --tier-expert-edge: #a96712;
   --tier-expert-ink: #2b2115;
+  --tier-master-fill: linear-gradient(155deg, #d2591f, #a83c11);
+  --tier-master-edge: #7d2b0b;
+  --tier-master-ink: #fff1e4;
 }
 
 * { box-sizing: border-box; }

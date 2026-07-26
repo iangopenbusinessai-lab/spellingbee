@@ -28,10 +28,12 @@ supabase/
     submit-answer/         server-side correctness, timing and scoring
     advance-round/         the single "round over -> next word" path
   scripts/
-    gen_seed.mjs           regenerates 0003 from src/data/words.ts
+    gen_seed.mjs           regenerates 0011 from src/data/words/ (Session 16)
     verify.mjs             schema/RLS checks (Session 7b)
     verify_functions.mjs   edge-function authorization + anti-cheat checks
     verify_race.mjs        8-way winner race + server-clock timeout
+    verify_tiers.mjs       8-tier CHECK + round_seconds() (Session 15)
+    verify_multiplayer_tier.mjs  full game on any tier, asserts no early exhaustion
     verify_sweeper_race.mjs      sweeper vs client advance: no double-advance
     verify_sweeper_realtime.mjs  clients see sweeper-driven advancement
   README.md
@@ -170,22 +172,30 @@ full contents of each and executing before moving to the next:
 
 ## Regenerating the word seed
 
-`0003_seed_words.sql` is generated from `src/data/words.ts` so the two never
-drift. If the word bank changes, regenerate (never hand-edit `0003`):
+`0011_reseed_words.sql` is the canonical seed as of Session 16. It is generated
+from the per-tier files in `src/data/words/` so the two never drift, and it
+SUPERSEDES the word rows in `0003` (the original 120) and `0010` (the Session 15
+placeholders). Those are left in place because they are already applied remotely
+and rewriting an applied migration would diverge local and remote history.
+
+If the word bank changes, regenerate (never hand-edit `0011`):
 
 ```bash
-node supabase/scripts/gen_seed.mjs src/data/words.ts supabase/migrations/0003_seed_words.sql
+node supabase/scripts/gen_seed.mjs supabase/migrations/0011_reseed_words.sql
 ```
 
-The script aborts unless it parses exactly 120 words, and the insert is
-idempotent (`on conflict (id) do update`), so it is safe to re-run.
+The script aborts if it parses fewer than 1000 words or finds a duplicate id.
+The insert is idempotent (`on conflict (id) do update`) and does no deletes —
+`round_results.word_id` is a foreign key onto `words.id`, so removing a word a
+past game referenced would fail. Run `node scripts/verify_words.mjs` first; it is
+the real gate on bank integrity.
 
 ## Verifying a fresh apply
 
 Run these in the SQL editor (or `psql`) after migrating:
 
 ```sql
--- 120 words, 30 per tier
+-- 1200 words, 150 per tier
 select tier, count(*) from public.words group by tier order by tier;
 
 -- RLS is on for every table

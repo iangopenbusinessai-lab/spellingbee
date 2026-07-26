@@ -32,6 +32,19 @@ const ROUND_SECONDS: Record<DifficultyTier, number> = {
 
 const FEEDBACK_DELAY_MS = 1100;
 
+// How many words make one singleplayer game.
+//
+// Added in Session 16, when the bank went from 30 words per tier to 150. Without
+// a cap the queue is the whole tier, so a game would have silently become five
+// times longer — a content change turning into a gameplay change nobody asked
+// for. 30 keeps a game exactly the length it has always been; the extra words
+// make the POOL deeper (less repetition between games), not the game longer.
+//
+// The multiplayer counterpart is public.rounds_per_game() (=10) in migration
+// 0006. The two are independent on purpose: a solo run and a race are different
+// lengths by design, and the server owns its own value.
+const WORDS_PER_GAME = 30;
+
 function checkAnswer(word: WordEntry, guess: string): boolean {
   return guess.trim().toLowerCase() === word.word.toLowerCase();
 }
@@ -103,7 +116,7 @@ export function useGameEngine(): GameEngineApi {
       const untimed = options?.untimed ?? false;
       const hideDefinition = options?.hideDefinition ?? false;
       clearTimer();
-      queueRef.current = shuffle(wordsForTier(tier));
+      queueRef.current = shuffle(wordsForTier(tier)).slice(0, WORDS_PER_GAME);
       setState({
         ...initialState,
         tier,

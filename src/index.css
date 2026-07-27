@@ -27,6 +27,7 @@
   --honey: #e8a63d;        /* accent for text, borders, headings */
   --honey-solid: #e8a63d;  /* accent as a fill behind text */
   --honey-dark: #9c6b1f;
+  --honey-glow: rgba(232, 166, 61, 0.36); /* the accent as a halo; needs alpha, so it is its own token */
   --on-honey: #1a1610;     /* ink on top of --honey-solid */
 
   --text: #f5efe3;
@@ -84,6 +85,7 @@
     --honey: #9a6210;
     --honey-solid: #e09a2c;
     --honey-dark: #c9a05a;
+    --honey-glow: rgba(224, 154, 44, 0.42);
     --on-honey: #2b2115;
 
     --text: #2c2419;
@@ -128,6 +130,7 @@
   --honey: #9a6210;
   --honey-solid: #e09a2c;
   --honey-dark: #c9a05a;
+  --honey-glow: rgba(224, 154, 44, 0.42);
   --on-honey: #2b2115;
 
   --text: #2c2419;

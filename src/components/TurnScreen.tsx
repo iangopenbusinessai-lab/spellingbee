@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, Eye, Heart, Volume2 } from "lucide-react";
+import { ArrowLeft, Eye, Ghost, Heart, Volume2 } from "lucide-react";
 import type { GameState } from "../types";
 import type { MultiplayerExtras } from "../hooks/useMultiplayerGame";
 import { repeatWord, stopSpeaking } from "../lib/tts";
@@ -133,6 +133,13 @@ export function TurnScreen({
     return () => window.clearTimeout(t);
   });
 
+  // Everyone dealt into the rotation, in rotation order. A row without a
+  // turn_order is a spectator who was never dealt in (0012's rule), so they are
+  // not part of the table and get no token.
+  const roster = players
+    .filter((p) => p.turn_order !== null)
+    .sort((a, b) => (a.turn_order ?? 0) - (b.turn_order ?? 0));
+
   const holder = players.find((p) => p.player_id === currentTurnPlayerId) ?? null;
   const holderName = holder
     ? holder.player_id === currentUserId
@@ -242,44 +249,6 @@ export function TurnScreen({
         <span className="turn-banner-name">{holderName}</span>
       </div>
 
-      {/* The roster, always visible: lives are the currency of this mode, so
-          everyone's should be legible at a glance rather than on a results
-          screen afterwards. */}
-      <ul className="lives-roster">
-        {players
-          .filter((p) => p.turn_order !== null)
-          .sort((a, b) => (a.turn_order ?? 0) - (b.turn_order ?? 0))
-          .map((p) => {
-            const isTurn = p.player_id === currentTurnPlayerId;
-            const isYou = p.player_id === currentUserId;
-            return (
-              <li
-                key={p.player_id}
-                className={
-                  "lives-row" +
-                  (p.is_eliminated ? " out" : "") +
-                  (isTurn ? " active" : "")
-                }
-              >
-                <AvatarBadge avatar={p.avatar} size={16} dimmed={p.is_eliminated} />
-                <span className="lives-name">
-                  {p.display_name}
-                  {isYou && <span className="tag tag-you">you</span>}
-                </span>
-                <span className="lives-hearts" aria-label={`${p.lives} lives`}>
-                  {p.is_eliminated ? (
-                    <span className="lives-out">out</span>
-                  ) : (
-                    Array.from({ length: p.lives }, (_, i) => (
-                      <Heart key={i} size={13} aria-hidden className="life" />
-                    ))
-                  )}
-                </span>
-              </li>
-            );
-          })}
-      </ul>
-
       {leadIn && <p className="lead-in">{leadIn}</p>}
 
       {state.currentWord && (
@@ -334,14 +303,90 @@ export function TurnScreen({
 
       <TimerBar wordId={wordId} timeLeft={state.timeLeft} />
 
-      {feedback === "correct" && <p className="feedback correct">{OUTCOME_LABEL.correct}!</p>}
-      {feedback === "incorrect" && (
-        <p className="feedback incorrect">
-          {OUTCOME_LABEL[turnOutcome ?? "wrong"]}
-          {lastResolvedTurn?.word ? ` — the word was "${lastResolvedTurn.word}"` : ""}
-        </p>
-      )}
-      {resultNote && <p className="result-note">{resultNote}</p>}
+      {/* Reserved slot, not a conditional gap.
+          Feedback appears for the ~1.1s server feedback window and then goes
+          again. Letting it insert and remove itself would shove the token row
+          (and, before the reorder, the input) up and down every single turn.
+          A fixed min-height means the turn ends with text APPEARING rather than
+          with the page jumping. It sits directly above the tokens on purpose:
+          "Missed — the word was X" reads straight into the token that just lost
+          a heart. */}
+      <div className="turn-feedback" aria-live="polite">
+        {feedback === "correct" && <p className="feedback correct">{OUTCOME_LABEL.correct}!</p>}
+        {feedback === "incorrect" && (
+          <p className="feedback incorrect">
+            {OUTCOME_LABEL[turnOutcome ?? "wrong"]}
+            {lastResolvedTurn?.word ? ` — the word was "${lastResolvedTurn.word}"` : ""}
+          </p>
+        )}
+        {resultNote && <p className="result-note">{resultNote}</p>}
+      </div>
+
+      {/* THE TABLE.
+          Replaces the old vertical name+hearts list. That list was fine at three
+          players and became the tallest thing on the screen at eight, pushing the
+          word itself below the fold — and it sat ABOVE the input, so the thing
+          you act on kept moving as the roster changed.
+
+          These are PURELY INFORMATIONAL: no button, no link, no click handler,
+          nothing focusable. So there is no tap target to measure — the row is
+          read, not touched.
+
+          Ghost state is driven by `p.is_eliminated`, which is a server column
+          arriving over Realtime. It reads identically on every client, including
+          the ghosted player's own screen; nothing here branches on who is
+          looking, so being out is a fact about the game rather than a private
+          notification. */}
+      <ul className="player-tokens" aria-label="Players at the table">
+        {roster.map((p, i) => {
+          const isTurn = p.player_id === currentTurnPlayerId;
+          const isYou = p.player_id === currentUserId;
+          const label = isYou ? "You" : p.display_name;
+          return (
+            <li
+              key={p.player_id}
+              className={
+                "ptoken" +
+                (p.is_eliminated ? " ghost" : "") +
+                (isTurn ? " active" : "") +
+                (isYou ? " you" : "")
+              }
+              aria-label={
+                p.is_eliminated
+                  ? `${label} — out`
+                  : `${label} — ${p.lives} ${p.lives === 1 ? "life" : "lives"}${
+                      isTurn ? (isYou ? ", your turn" : ", their turn") : ""
+                    }`
+              }
+            >
+              <span
+                className="ptoken-disc"
+                /* Staggered so ghosts drift out of phase instead of bobbing in
+                   unison like one object. Index-based, so it is stable across
+                   re-renders and identical on every client. */
+                style={p.is_eliminated ? { animationDelay: `${(i % 4) * 0.55}s` } : undefined}
+              >
+                {p.is_eliminated ? (
+                  /* A ghost MOTIF, not a ninth avatar. AVATAR_KEYS is untouched
+                     and still the one preset list — this is a state a player is
+                     in, never something anyone can pick. */
+                  <Ghost size={24} aria-hidden className="ptoken-ghost-icon" />
+                ) : (
+                  <AvatarBadge avatar={p.avatar} size={24} />
+                )}
+
+                {!p.is_eliminated && (
+                  <span className="ptoken-lives" aria-hidden>
+                    <Heart size={9} className="life" />
+                    {p.lives}
+                  </span>
+                )}
+              </span>
+              <span className="ptoken-name">{label}</span>
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
 }

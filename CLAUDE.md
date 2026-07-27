@@ -610,6 +610,57 @@ Rules this session must keep:
   reimplementing the timeout locally is exactly the duplication the architecture
   forbids. A `timeout-turn` edge function is the fix.
 
+**TurnScreen's table is a row of avatar tokens** since Session 21, and the screen
+got a spacing pass. Presentation only: `useMultiplayerGame`, `GameEngineApi`,
+0012 and `checkAnswer` are untouched, and everything renders from data that was
+already in `MultiplayerExtras`. Two files plus one token.
+
+Rules this session must keep:
+- **Every new rule is scoped under `.turn-screen` or `.ptoken*`.** `.prompt-card`,
+  `.lead-in`, `.guess-input`, `.timer-track`, `.feedback`, `.result-note` and
+  `.score-bar` are all SHARED with `RoundScreen`, so an unscoped tweak silently
+  moves singleplayer and race mode. Verified by measuring: outside `.turn-screen`,
+  `.prompt-card` still computes `margin-bottom: 20px` and `.timer-track` `0px`.
+- **The reading order is deliberate**, and replaced a flat `gap: 12px` that made
+  everything equidistant and therefore unrelated: HUD -> who is up -> the word ->
+  the action -> the clock -> the outcome -> the table. Gap now encodes grouping,
+  tight within a group and loose between. The biggest break on the screen is
+  between the definition card and the input: above it is what you are being
+  asked, below it is what you do about it.
+- **The token row goes BELOW the timer bar, not between input and bar.** Session
+  17 welded the bar to the guess input — it drains under the thing it is timing —
+  so putting faces between them would split that pair. Input and bar sit 6px
+  apart; the tokens are the last thing on the screen because they are ambient
+  state, not the task.
+- **`.turn-feedback` is a reserved slot with a fixed min-height.** Feedback shows
+  for the ~1.1s server window and leaves; letting it insert and remove itself
+  shoved everything below it up and down every single turn. It sits directly
+  above the tokens so "Missed — the word was X" reads into the token that just
+  lost a heart.
+- **The tokens are purely informational.** No button, no link, no tabindex,
+  nothing focusable, and deliberately no `:hover`/`:focus` styling — suggesting
+  they can be pressed would be a lie. So there is no tap target to measure here;
+  confirmed by querying the row for interactive elements and getting zero.
+- **Ghost state is a swap, not a dim.** The avatar glyph is replaced by lucide's
+  `Ghost`, the disc goes translucent + dashed + `--out`, and the name is struck
+  through. This is a STATE, never a ninth avatar: `AVATAR_KEYS` is untouched and
+  is still the one preset list the 0012 CHECK validates.
+- **The ghost drift must stay decoration.** Its resting state is `transform: none`,
+  which is what `.ptoken-disc` already has, so when the Session 13 reduce-motion
+  block collapses the animation to 0.001ms/1 iteration with no fill-mode, the disc
+  reverts to exactly that. Suppression cannot strand a ghost mid-drift. The
+  desaturation is a `filter`, not an animation, so the ghost stays distinct with
+  motion off. Verified through the real settings toggle, not by reading the CSS:
+  drift on gave 10 distinct transforms in 1.8s, drift off gave 1 (`none`), and
+  opacity/grayscale/dashed/ghost-icon all survived.
+- **Ghosting is a fact about the game, not a private notification.** It is driven
+  only by `p.is_eliminated` from the server row over Realtime; nothing branches on
+  who is looking. Verified on three clients at once, including the ghosted
+  player's own screen, which shows them as `ptoken ghost you`.
+- `--honey-glow` was added for the turn-holder halo because a glow needs alpha
+  and no existing token carries it. Added to all three palette blocks (dark, and
+  both light) in the same edit, per the colour rule.
+
 ## Naming note
 Local dev folder/npm package name may still say "spelling-race" from
 initial scaffolding — that's cosmetic and doesn't need to match the repo

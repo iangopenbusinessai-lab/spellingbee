@@ -1,4 +1,5 @@
 import { TIER_ORDER, type DifficultyTier } from "../types";
+import { coerceAvatar, type AvatarKey } from "./avatars";
 
 const KEY_PREFIX = "spellingbee:best:";
 
@@ -40,6 +41,22 @@ export function getDisplayName(): string {
 
 export function setDisplayName(name: string): void {
   localStorage.setItem(DISPLAY_NAME_KEY, name);
+}
+
+// Remembered avatar, persisted exactly like the display name above and for the
+// same reason — it is the other half of "who you are" in a room, and retyping
+// your identity every session is friction. Stored as room_players.avatar.
+//
+// Read back through coerceAvatar so a stale or hand-edited value can never
+// reach the database and trip the 0012 CHECK constraint.
+const AVATAR_KEY = "spellingbee:avatar";
+
+export function getAvatar(): AvatarKey {
+  return coerceAvatar(localStorage.getItem(AVATAR_KEY));
+}
+
+export function setAvatar(avatar: AvatarKey): void {
+  localStorage.setItem(AVATAR_KEY, avatar);
 }
 
 // --- voice preferences -----------------------------------------------------

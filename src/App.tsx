@@ -8,6 +8,8 @@ import { RoundScreen } from "./components/RoundScreen";
 import { ResultsScreen } from "./components/ResultsScreen";
 import { LobbyScreen } from "./components/LobbyScreen";
 import { WaitingRoom } from "./components/WaitingRoom";
+import { TurnScreen } from "./components/TurnScreen";
+import { EliminationResults } from "./components/EliminationResults";
 import { useGameEngine } from "./hooks/useGameEngine";
 import { useMultiplayerGame } from "./hooks/useMultiplayerGame";
 import type { DifficultyTier } from "./types";
@@ -110,28 +112,44 @@ function App() {
           </div>
         )}
 
+        {/* Which round screen is decided by the ROOM's mode, read from the
+            server row via extras — not by anything this client chose. The two
+            modes are different enough in shape that they get different screens
+            (see TurnScreen's header); what they share, they share as
+            components. */}
         {(mp.state.status === "playing" ||
           mp.state.status === "correct" ||
-          mp.state.status === "incorrect") && (
-          <RoundScreen
-            state={mp.state}
-            onSubmit={mp.submitGuess}
-            onSkip={mp.skipWord}
-            awaitingOthers={mp.extras.awaitingOthers}
-            resultNote={mp.extras.resultNote}
-            canSkip={false}
-          />
-        )}
+          mp.state.status === "incorrect") &&
+          (mp.extras.mode === "elimination" ? (
+            <TurnScreen
+              state={mp.state}
+              extras={mp.extras}
+              onSubmit={mp.submitGuess}
+              onLeave={handleLeaveRoom}
+            />
+          ) : (
+            <RoundScreen
+              state={mp.state}
+              onSubmit={mp.submitGuess}
+              onSkip={mp.skipWord}
+              awaitingOthers={mp.extras.awaitingOthers}
+              resultNote={mp.extras.resultNote}
+              canSkip={false}
+            />
+          ))}
 
-        {mp.state.status === "finished" && (
-          <ResultsScreen
-            score={mp.state.score}
-            bestStreak={mp.state.bestStreak}
-            best={mp.state.score}
-            onReplay={handleLeaveRoom}
-            onMenu={handleLeaveRoom}
-          />
-        )}
+        {mp.state.status === "finished" &&
+          (mp.extras.mode === "elimination" ? (
+            <EliminationResults extras={mp.extras} onLeave={handleLeaveRoom} />
+          ) : (
+            <ResultsScreen
+              score={mp.state.score}
+              bestStreak={mp.state.bestStreak}
+              best={mp.state.score}
+              onReplay={handleLeaveRoom}
+              onMenu={handleLeaveRoom}
+            />
+          ))}
 
         {mp.extras.error && <p className="lobby-error">{mp.extras.error}</p>}
       </Shell>

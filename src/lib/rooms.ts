@@ -1,16 +1,33 @@
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import type { DifficultyTier } from "../types";
 import { getSupabase } from "./supabaseClient";
+import { DEFAULT_AVATAR, type AvatarKey } from "./avatars";
 
 // --- shapes (kept out of src/types.ts so the core GameState contract is
 // untouched; these describe backend rows, not singleplayer game state) --------
 export type RoomStatus = "lobby" | "active" | "finished";
+
+/** Which engine owns a room. Mirrors the `rooms.mode` CHECK in 0012. */
+export type RoomMode = "race" | "elimination";
+
+/** The DB default for rooms.lives_setting (0012), and its CHECK bounds. */
+export const DEFAULT_LIVES = 3;
+export const MIN_LIVES = 1;
+export const MAX_LIVES = 9;
+
+/** "1 life" / "3 lives". MIN_LIVES is 1, so the singular is reachable. */
+export const livesLabel = (n: number) => `${n} ${n === 1 ? "life" : "lives"}`;
 
 export interface RoomInfo {
   id: string;
   code: string;
   tier: DifficultyTier;
   status: RoomStatus;
+  /** Session 20: which engine this room runs. */
+  mode: RoomMode;
+  /** Lives each player starts with. Meaningless in a race room; still carried
+   *  so RoomInfo has one shape, and reported straight from the row. */
+  livesSetting: number;
 }
 
 export interface PlayerRow {
@@ -20,7 +37,20 @@ export interface PlayerRow {
   score: number;
   streak: number;
   connected_at: string;
+  // --- Session 20: elimination columns (added by 0012) ---------------------
+  // Present on every room's rows because they are table columns, but only
+  // meaningful in an elimination game. turn_order is NULL until the game
+  // starts, and stays NULL for anyone not dealt into the rotation.
+  lives: number;
+  is_eliminated: boolean;
+  turn_order: number | null;
+  avatar: AvatarKey;
 }
+
+/** The columns every player read in this app asks for. One list, so the
+ *  waiting room and the game hook can't drift on what a PlayerRow contains. */
+export const PLAYER_COLUMNS =
+  "room_id,player_id,display_name,score,streak,connected_at,lives,is_eliminated,turn_order,avatar";
 
 // Best-effort lobby cap. Hard, race-free enforcement belongs in the Session 9
 // edge function (a client can't atomically reserve a slot); here we join then
@@ -49,14 +79,37 @@ async function requireUid(): Promise<string> {
 // client-side because the member-only SELECT policy on rooms blocks reading the
 // row back before we've joined (confirmed in Session 7b), so insert uses
 // return=minimal and we trust the ids we made.
-export async function createRoom(tier: DifficultyTier, displayName: string): Promise<RoomInfo> {
+export interface CreateRoomOptions {
+  tier: DifficultyTier;
+  displayName: string;
+  avatar: AvatarKey;
+  /** Session 20. Defaults to race so an omitted mode matches the DB default. */
+  mode?: RoomMode;
+  /** Only meaningful for elimination; ignored by the race engine. */
+  livesSetting?: number;
+}
+
+export async function createRoom({
+  tier,
+  displayName,
+  avatar,
+  mode = "race",
+  livesSetting = DEFAULT_LIVES,
+}: CreateRoomOptions): Promise<RoomInfo> {
   const uid = await requireUid();
+
+  // Clamped to the CHECK bounds in 0012 rather than sent raw. This is not the
+  // authority — the constraint is — but a slider that somehow produced 0 should
+  // fail as a corrected value, not as a database error the player can't read.
+  const lives = Math.min(MAX_LIVES, Math.max(MIN_LIVES, Math.round(livesSetting)));
 
   for (let attempt = 0; attempt < 5; attempt++) {
     const id = crypto.randomUUID();
     const code = generateCode();
 
-    const { error } = await getSupabase().from("rooms").insert({ id, code, tier, host_id: uid });
+    const { error } = await getSupabase()
+      .from("rooms")
+      .insert({ id, code, tier, host_id: uid, mode, lives_setting: lives });
     if (error) {
       if (error.code === "23505") continue; // code/id collision — retry a new code
       throw error;
@@ -64,10 +117,10 @@ export async function createRoom(tier: DifficultyTier, displayName: string): Pro
 
     const { error: joinErr } = await getSupabase()
       .from("room_players")
-      .insert({ room_id: id, player_id: uid, display_name: displayName });
+      .insert({ room_id: id, player_id: uid, display_name: displayName, avatar });
     if (joinErr) throw joinErr;
 
-    return { id, code, tier, status: "lobby" };
+    return { id, code, tier, status: "lobby", mode, livesSetting: lives };
   }
   throw new Error("Couldn't generate a free room code — please try again.");
 }
@@ -76,20 +129,54 @@ export async function createRoom(tier: DifficultyTier, displayName: string): Pro
 // resolve the code through the get_room_by_code() security-definer RPC (which
 // returns only lobby/active rooms and never leaks host_id), then insert our own
 // membership row.
-export async function joinRoomByCode(rawCode: string, displayName: string): Promise<RoomInfo> {
+/**
+ * Look up a room by code WITHOUT joining it, so the join screen can show what
+ * kind of game it is before committing. Session 19's 0013 widened
+ * get_room_by_code() with mode and lives_setting precisely so this is possible;
+ * before that a joiner had to guess or find out afterwards.
+ */
+export interface RoomPreview {
+  id: string;
+  status: RoomStatus;
+  tier: DifficultyTier;
+  mode: RoomMode;
+  livesSetting: number;
+}
+
+export async function previewRoomByCode(rawCode: string): Promise<RoomPreview | null> {
+  const code = rawCode.trim().toUpperCase();
+  if (!code) return null;
+  const { data, error } = await getSupabase().rpc("get_room_by_code", { p_code: code });
+  if (error) throw error;
+  const room = Array.isArray(data) ? data[0] : data;
+  if (!room) return null;
+  return {
+    id: room.id as string,
+    status: room.status as RoomStatus,
+    tier: room.tier as DifficultyTier,
+    // Reported from the row, never defaulted silently: a room whose mode we
+    // could not read is a room we should not be previewing.
+    mode: room.mode as RoomMode,
+    livesSetting: room.lives_setting as number,
+  };
+}
+
+export async function joinRoomByCode(
+  rawCode: string,
+  displayName: string,
+  avatar: AvatarKey = DEFAULT_AVATAR
+): Promise<RoomInfo> {
   const code = rawCode.trim().toUpperCase();
   if (!code) throw new Error("Enter a room code.");
   const uid = await requireUid();
 
-  const { data, error } = await getSupabase().rpc("get_room_by_code", { p_code: code });
-  if (error) throw error;
-  const room = Array.isArray(data) ? data[0] : data;
+  const room = await previewRoomByCode(code);
   if (!room) throw new Error("No open room with that code.");
   if (room.status !== "lobby") throw new Error("That room's game has already started.");
 
   const { error: joinErr } = await getSupabase()
     .from("room_players")
-    .insert({ room_id: room.id, player_id: uid, display_name: displayName });
+    .insert({ room_id: room.id, player_id: uid, display_name: displayName, avatar });
   // 23505 = we already have a row in this room (re-join) — that's fine.
   if (joinErr && joinErr.code !== "23505") throw joinErr;
 
@@ -104,7 +191,14 @@ export async function joinRoomByCode(rawCode: string, displayName: string): Prom
     throw new Error(`That room is full (max ${PLAYER_CAP} players).`);
   }
 
-  return { id: room.id, code, tier: room.tier as DifficultyTier, status: room.status };
+  return {
+    id: room.id,
+    code,
+    tier: room.tier,
+    status: room.status,
+    mode: room.mode,
+    livesSetting: room.livesSetting,
+  };
 }
 
 // Leave a lobby by deleting our own room_players row. Allowed by the narrow
@@ -124,11 +218,11 @@ export async function leaveRoom(roomId: string): Promise<void> {
 export async function fetchPlayers(roomId: string): Promise<PlayerRow[]> {
   const { data, error } = await getSupabase()
     .from("room_players")
-    .select("room_id,player_id,display_name,score,streak,connected_at")
+    .select(PLAYER_COLUMNS)
     .eq("room_id", roomId)
     .order("connected_at", { ascending: true });
   if (error) throw error;
-  return (data ?? []) as PlayerRow[];
+  return (data ?? []) as unknown as PlayerRow[];
 }
 
 // The host_id, readable by room members (unlike via get_room_by_code), so the
@@ -284,5 +378,76 @@ export async function advanceRound(
   return callEdge<AdvanceRoundPayload>("advance-round", {
     room_id: roomId,
     round_num: roundNum,
+  });
+}
+
+// --- elimination mode (Session 19 edge functions, wired up in Session 20) ----
+
+export interface EliminationStartPayload {
+  round_num: number;
+  word: string;
+  turn_player_id: string;
+  turn_started_at: string;
+  round_seconds: number;
+  lives: number;
+  starting_players: number;
+  tier: DifficultyTier;
+}
+
+/**
+ * Host-only: begin an elimination game.
+ *
+ * A separate endpoint from startGame() rather than a mode flag on it, because
+ * they are separate SQL transitions — and since Session 19's 0015 each refuses
+ * the other's rooms outright, so calling the wrong one is a 409 rather than a
+ * corrupted game.
+ */
+export async function startEliminationGame(
+  roomId: string
+): Promise<EdgeResult<EliminationStartPayload>> {
+  return callEdge<EliminationStartPayload>("start-elimination-game", { room_id: roomId });
+}
+
+export interface SubmitTurnPayload {
+  correct: boolean;
+  outcome: "correct" | "wrong" | "timeout";
+  points: number;
+  lives: number;
+  eliminated: boolean;
+  table_streak: number;
+  remaining_players: number;
+  finished: boolean;
+  /** Set when finished. */
+  winner_id?: string | null;
+  reason?: string;
+  /** Set when the game continues. */
+  next_round_num?: number;
+  next_turn_player_id?: string;
+  next_word?: string;
+  next_turn_started_at?: string;
+  /** The next turn's decayed duration, computed by the server's three-trigger
+   *  curve. The client never derives this — see useMultiplayerGame for why the
+   *  round_results row, not this field, is what actually drives the timer. */
+  next_round_seconds?: number;
+}
+
+/**
+ * Answer on your turn.
+ *
+ * Sends only the raw guess, exactly like submitAnswer: correctness, elapsed
+ * time, life loss, elimination and the next turn's length are all decided
+ * server-side. Whether it is even your turn is decided there too — this is
+ * called only when the client believes it is your turn, but the server's
+ * `not_your_turn` is the actual guard.
+ */
+export async function submitTurn(
+  roomId: string,
+  roundNum: number,
+  guess: string
+): Promise<EdgeResult<SubmitTurnPayload>> {
+  return callEdge<SubmitTurnPayload>("submit-turn", {
+    room_id: roomId,
+    round_num: roundNum,
+    guess,
   });
 }

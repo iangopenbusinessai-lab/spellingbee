@@ -1144,3 +1144,397 @@
   35% { transform: scale(1.32); color: var(--honey); }
   100% { transform: scale(1); }
 }
+
+/* ===========================================================================
+   Session 20 — elimination mode, avatars, and the spectator experience.
+
+   Every colour here is a token from index.css. Motion stays decoration on top
+   of a state that is already visible without it (a heart missing, a row
+   greyed, a name in the banner), which is what keeps the single global
+   prefers-reduced-motion block in index.css safe — see Session 12's rule.
+   =========================================================================== */
+
+/* --- avatars -------------------------------------------------------------- */
+
+.avatar-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* 48px square: comfortably over the 44px floor, and a plain rectangle so
+   (unlike the Session 12 hexes) the layout box really is the hit area. */
+.avatar-option {
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  cursor: pointer;
+  color: var(--muted);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  transition: transform 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+
+.avatar-option:hover { color: var(--text); transform: translateY(-1px); }
+
+.avatar-option.selected {
+  color: var(--on-honey);
+  background: var(--honey-solid);
+  border-color: var(--honey);
+}
+
+.avatar-option:focus-visible {
+  outline: 2px solid var(--honey);
+  outline-offset: 2px;
+}
+
+.avatar-badge {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  color: var(--honey);
+}
+
+.avatar-badge.dimmed { color: var(--out); }
+
+/* --- lobby: mode toggle + room preview ------------------------------------ */
+
+.mode-toggle {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+/* min-width:0 for the same reason .tier-card needed it (Session 12): the blurb
+   min-content width would otherwise floor the grid and overflow narrow phones. */
+.mode-option {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 12px;
+  text-align: left;
+  cursor: pointer;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  transition: border-color 0.12s ease, background-color 0.12s ease;
+}
+
+.mode-option.selected { border-color: var(--honey); background: var(--bg); }
+.mode-option:focus-visible { outline: 2px solid var(--honey); outline-offset: 2px; }
+
+.mode-name { font-family: var(--font-display); font-weight: 600; font-size: 0.95rem; }
+.mode-blurb { font-size: 0.72rem; line-height: 1.3; color: var(--muted); }
+
+.room-preview {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 2px 0 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--honey);
+  border-radius: 8px;
+  background: var(--bg);
+}
+
+.room-preview.elimination { border-left-color: var(--life); }
+.room-preview-mode { font-family: var(--font-display); font-weight: 600; font-size: 0.85rem; }
+.room-preview-detail { font-size: 0.78rem; color: var(--muted); }
+.room-preview-warn { font-size: 0.72rem; color: var(--bad); }
+
+.room-mode {
+  font-size: 0.75rem;
+  color: var(--muted);
+  letter-spacing: 0.02em;
+}
+.room-mode.elimination { color: var(--life); }
+
+/* --- the turn screen ------------------------------------------------------ */
+
+.turn-screen {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+}
+
+.turn-stats { grid-template-columns: repeat(5, 1fr); }
+
+.turn-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+}
+
+/* The one strong signal on the page: your turn is honey, everyone else's is
+   quiet. Colour is not the only cue — the text says whose turn it is too. */
+.turn-banner.mine {
+  color: var(--on-honey);
+  background: var(--honey-solid);
+  border-color: var(--honey);
+  animation: turn-pop 0.3s ease;
+}
+
+@keyframes turn-pop {
+  from { transform: scale(0.97); }
+  to { transform: scale(1); }
+}
+
+.turn-banner-name { font-weight: 600; }
+
+/* --- lives roster --------------------------------------------------------- */
+
+.lives-roster {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.lives-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: var(--surface);
+  font-size: 0.85rem;
+}
+
+.lives-row.active { border-color: var(--honey); }
+.lives-row.out { opacity: 0.55; }
+.lives-row.out .lives-name { text-decoration: line-through; color: var(--out); }
+
+.lives-name {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lives-hearts { display: inline-flex; gap: 2px; flex: none; }
+.lives-hearts .life { color: var(--life); fill: var(--life); }
+.lives-out {
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--out);
+}
+
+/* --- waiting / spectating ------------------------------------------------- */
+
+/* Deliberately NOT a disabled input. A non-holder has no input in the DOM at
+   all; this panel is what stands in its place, so the page reads as "someone
+   else is up" rather than as a broken form. */
+.waiting-turn,
+.spectating {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 52px;
+  padding: 12px 14px;
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 0.9rem;
+  text-align: center;
+}
+
+.spectating {
+  border-style: solid;
+  border-color: var(--spectate);
+  color: var(--spectate);
+}
+
+.waiting-dots { display: inline-flex; gap: 3px; }
+.waiting-dots i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--muted);
+  animation: waiting-pulse 1.2s ease-in-out infinite;
+}
+.waiting-dots i:nth-child(2) { animation-delay: 0.15s; }
+.waiting-dots i:nth-child(3) { animation-delay: 0.3s; }
+
+@keyframes waiting-pulse {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 1; }
+}
+
+/* --- the elimination moment ----------------------------------------------- */
+
+/* A full-screen beat, not a line of feedback text. Losing your last life is the
+   biggest thing that happens to a player in this mode, and a normal wrong
+   answer already uses .feedback.incorrect — this has to be unmistakably
+   different from that. */
+.knockout {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  min-height: 60vh;
+  justify-content: center;
+  padding: 28px 20px;
+  text-align: center;
+  border: 2px solid var(--bad);
+  border-radius: 18px;
+  background: var(--surface);
+  animation: knockout-in 0.35s ease;
+}
+
+@keyframes knockout-in {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.knockout-kicker {
+  font-family: var(--font-display);
+  font-size: 2rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--bad);
+}
+
+.knockout-label {
+  font-size: 0.8rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.knockout-word {
+  font-family: var(--font-display);
+  font-size: clamp(1.6rem, 9vw, 2.6rem);
+  font-weight: 700;
+  line-height: 1.1;
+  word-break: break-word;
+  color: var(--text);
+}
+
+.knockout-note { font-size: 0.85rem; color: var(--muted); }
+
+/* --- elimination results -------------------------------------------------- */
+
+.elim-results {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
+}
+
+.champion {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 24px 18px;
+  text-align: center;
+  border: 1px solid var(--honey);
+  border-radius: 18px;
+  background: var(--surface);
+}
+
+.champion.mine {
+  background: var(--tier-expert-fill);
+  border-color: var(--tier-expert-edge);
+  color: var(--tier-expert-ink);
+}
+
+.champion.mine .champion-kicker,
+.champion.mine .champion-note,
+.champion.mine .champion-cup { color: var(--tier-expert-ink); }
+.champion.mine .avatar-badge { color: var(--tier-expert-ink); }
+
+.champion-cup { color: var(--honey); }
+
+.champion-kicker {
+  font-size: 0.78rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.champion-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-display);
+  font-size: clamp(1.5rem, 7vw, 2.1rem);
+  font-weight: 700;
+}
+
+.champion-note { font-size: 0.85rem; color: var(--muted); }
+
+.standings { display: flex; flex-direction: column; gap: 6px; }
+
+.standings-label {
+  font-size: 0.72rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.standings ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.standing-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  font-size: 0.88rem;
+}
+
+.standing-row.you { border-color: var(--honey); }
+
+.standing-place {
+  width: 22px;
+  flex: none;
+  font-family: var(--font-display);
+  font-weight: 700;
+  color: var(--muted);
+  text-align: center;
+}
+
+.standing-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.standing-score { flex: none; color: var(--muted); font-variant-numeric: tabular-nums; }

@@ -8,7 +8,16 @@ import type {
   WordEntry,
 } from "../types";
 import { getSupabase } from "../lib/supabaseClient";
-import { advanceRound, startGame as startGameFn, submitAnswer } from "../lib/rooms";
+import {
+  advanceRound,
+  PLAYER_COLUMNS,
+  startEliminationGame,
+  startGame as startGameFn,
+  submitAnswer,
+  submitTurn,
+  type RoomMode,
+} from "../lib/rooms";
+import { coerceAvatar, type AvatarKey } from "../lib/avatars";
 import { secondsUntil, serverNow, syncServerClock } from "../lib/serverClock";
 
 // useMultiplayerGame — the multiplayer counterpart of useGameEngine.
@@ -33,6 +42,14 @@ interface RoomRow {
   current_round: number;
   round_started_at: string | null;
   host_id: string;
+  // --- Session 20: elimination columns (0012) -------------------------------
+  mode: RoomMode;
+  lives_setting: number;
+  current_turn_player_id: string | null;
+  starting_players: number | null;
+  table_streak: number;
+  /** Last player standing, set by the server when an elimination game ends. */
+  winner_id: string | null;
 }
 
 /** Row shape of the current round in `round_results`. */
@@ -42,13 +59,41 @@ interface RoundRow {
   winner_id: string | null;
   response_time_ms: number | null;
   ended_at: string | null;
+  // --- Session 20: elimination columns (0012) -------------------------------
+  /** Whose turn this row is. NULL marks a race round. */
+  turn_player_id: string | null;
+  turn_started_at: string | null;
+  /** THIS turn's decayed duration, frozen by the server when the turn opened. */
+  round_seconds: number | null;
+  outcome: TurnOutcome | null;
 }
+
+export type TurnOutcome = "correct" | "wrong" | "timeout";
 
 interface PlayerRow {
   player_id: string;
   display_name: string;
   score: number;
   streak: number;
+  lives: number;
+  is_eliminated: boolean;
+  turn_order: number | null;
+  avatar: AvatarKey;
+}
+
+/** A resolved past turn, used only to order eliminations. */
+interface PastTurn {
+  round_num: number;
+  turn_player_id: string | null;
+  outcome: TurnOutcome | null;
+}
+
+/** The last turn that actually resolved, with the word it was played on. */
+export interface ResolvedTurn {
+  roundNum: number;
+  playerId: string | null;
+  outcome: TurnOutcome | null;
+  word: string | null;
 }
 
 /** Server-owned timing constants. Never hardcoded here — see fetchConstants. */
@@ -77,6 +122,55 @@ export interface MultiplayerExtras {
   currentUserId: string | null;
   /** Most recent failure worth showing the player. */
   error: string | null;
+
+  // --- Session 20: elimination-only facts ------------------------------------
+  // Added here, as extras, for exactly the reason the race-only fields above
+  // were: GameState is the contract every screen shares, and none of this has
+  // any meaning in singleplayer. GameEngineApi did not need to change.
+  /** Which engine this room runs. 'race' for every pre-Session-18 room. */
+  mode: RoomMode;
+  /** Lives each player was dealt. From rooms.lives_setting. */
+  livesSetting: number;
+  /** How many players the game started with (the decay curve's denominator). */
+  startingPlayers: number | null;
+  /** Consecutive correct answers across the whole table. Drives decay. */
+  tableStreak: number;
+  /** Whose turn it is right now. NULL in a race room and once the game ends. */
+  currentTurnPlayerId: string | null;
+  /** Is it MY turn? The only thing that unlocks the guess input. */
+  isMyTurn: boolean;
+  /** Have I been knocked out? Switches me to the spectator view. */
+  amEliminated: boolean;
+  /** My remaining lives, or null before the game starts. */
+  myLives: number | null;
+  /** Players still standing. */
+  survivors: number;
+  /**
+   * Player ids in the order they were knocked out, first out first.
+   *
+   * Derived for PRESENTATION only, and only over players the server has
+   * already flagged is_eliminated — this does not decide who is out, it orders
+   * people the server says are out. The key is the round number of each
+   * player's last losing turn, which is by definition the turn that took their
+   * final life, since a player gets no further turns after being eliminated.
+   */
+  eliminationOrder: string[];
+  /** How the last turn resolved, while that resolution is on screen. */
+  turnOutcome: TurnOutcome | null;
+  /**
+   * The most recently resolved turn, including the WORD it was played on.
+   *
+   * Deliberately NOT gated on the feedback window, unlike turnOutcome above.
+   * The elimination moment needs the word that knocked a player out, and it
+   * latches at the instant `amEliminated` flips — which is driven by a Realtime
+   * row change, not by the clock. Gating this on the clock-derived feedback
+   * window meant a throttled tab latched the knockout with no word and fell
+   * back to generic text; live testing caught exactly that.
+   */
+  lastResolvedTurn: ResolvedTurn | null;
+  /** Set when the game is over: the last player standing. */
+  winnerId: string | null;
+  winnerName: string | null;
 }
 
 export interface MultiplayerGame extends GameEngineApi {
@@ -105,6 +199,9 @@ export function useMultiplayerGame(roomId: string | null): MultiplayerGame {
   const [round, setRound] = useState<RoundRow | null>(null);
   const [word, setWord] = useState<WordEntry | null>(null);
   const [players, setPlayers] = useState<PlayerRow[]>([]);
+  const [pastTurns, setPastTurns] = useState<PastTurn[]>([]);
+  /** The last RESOLVED turn — see the fetch in refresh() for why this exists. */
+  const [prevTurn, setPrevTurn] = useState<ResolvedTurn | null>(null);
   const [constants, setConstants] = useState<GameConstants | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -153,38 +250,118 @@ export function useMultiplayerGame(roomId: string | null): MultiplayerGame {
     if (!roomId) return;
     const supabase = getSupabase();
 
+    // EVERY read HAPPENS FIRST, EVERY setState HAPPENS LAST — deliberately.
+    //
+    // The first version interleaved them, setting each piece of state as its
+    // query returned. Because each `await` ends React's batching, that produced
+    // renders where some rows were the new ones and others were still the old:
+    // in particular `players` (carrying is_eliminated) committed a tick before
+    // `prevTurn` (carrying the word that did it). The elimination moment latches
+    // on exactly that transition, so it saw a player who was out and no word yet,
+    // and fell back to generic text. Live testing caught it.
+    //
+    // Collecting first and committing at the end means every render sees one
+    // coherent snapshot of the room. Anything that latches on a transition — this
+    // one, and anything added later — can trust what it reads alongside it.
     const { data: roomData } = await supabase
       .from("rooms")
-      .select("id,tier,status,current_round,round_started_at,host_id")
+      .select(
+        "id,tier,status,current_round,round_started_at,host_id," +
+          "mode,lives_setting,current_turn_player_id,starting_players,table_streak,winner_id"
+      )
       .eq("id", roomId)
       .maybeSingle();
     if (!roomData) return;
     const r = roomData as unknown as RoomRow;
-    setRoom(r);
 
     const { data: playerData } = await supabase
       .from("room_players")
-      .select("player_id,display_name,score,streak")
+      .select(PLAYER_COLUMNS)
       .eq("room_id", roomId)
       .order("connected_at", { ascending: true });
-    setPlayers((playerData ?? []) as unknown as PlayerRow[]);
+    const nextPlayers = ((playerData ?? []) as unknown as PlayerRow[]).map((p) => ({
+      ...p,
+      avatar: coerceAvatar(p.avatar),
+    }));
 
+    let nextRound: RoundRow | null = null;
     if (r.current_round > 0) {
       const { data: roundData } = await supabase
         .from("round_results")
-        .select("round_num,word_id,winner_id,response_time_ms,ended_at")
+        .select(
+          "round_num,word_id,winner_id,response_time_ms,ended_at," +
+            "turn_player_id,turn_started_at,round_seconds,outcome"
+        )
         .eq("room_id", roomId)
         .eq("round_num", r.current_round)
         .maybeSingle();
-      if (roundData) {
-        const rr = roundData as unknown as RoundRow;
-        setRound(rr);
-        void loadWord(rr.word_id);
-      }
-    } else {
-      setRound(null);
-      setWord(null);
+      if (roundData) nextRound = roundData as unknown as RoundRow;
     }
+
+    // The PREVIOUS turn, and why it has to be fetched at all.
+    //
+    // apply_turn_outcome closes turn N and opens turn N+1 in ONE transaction,
+    // so by the time a client sees the change, rooms.current_round is already
+    // N+1 and the row for N+1 has outcome NULL. The outcome everyone needs to
+    // SEE — right/wrong, whose life it cost, which word it was — lives on row N.
+    // Without this fetch there is no feedback to render for anybody, including
+    // the player who just answered.
+    //
+    // The feedback window is not a client-side timer either: the server set
+    // turn N+1's turn_started_at to feedback_ms in the future, so "are we still
+    // in feedback" is simply "has the next turn's clock started yet".
+    let nextPrev: ResolvedTurn | null = null;
+    if (r.mode === "elimination" && r.current_round > 1) {
+      const { data: prevData } = await supabase
+        .from("round_results")
+        .select("round_num,word_id,turn_player_id,outcome")
+        .eq("room_id", roomId)
+        .eq("round_num", r.current_round - 1)
+        .maybeSingle();
+      if (prevData) {
+        const pv = prevData as unknown as {
+          round_num: number;
+          word_id: string;
+          turn_player_id: string | null;
+          outcome: TurnOutcome | null;
+        };
+        const { data: w } = await supabase
+          .from("words")
+          .select("word")
+          .eq("id", pv.word_id)
+          .maybeSingle();
+        nextPrev = {
+          roundNum: pv.round_num,
+          playerId: pv.turn_player_id,
+          outcome: pv.outcome,
+          word: (w?.word as string | undefined) ?? null,
+        };
+      }
+    }
+
+    // Losing turns only, and only in elimination — this exists solely to order
+    // the players the server has already marked eliminated, so a race room
+    // never pays for the query. Filtered server-side rather than fetching the
+    // whole history and discarding most of it.
+    let nextPast: PastTurn[] = [];
+    if (r.mode === "elimination" && r.current_round > 0) {
+      const { data: turnData } = await supabase
+        .from("round_results")
+        .select("round_num,turn_player_id,outcome")
+        .eq("room_id", roomId)
+        .in("outcome", ["wrong", "timeout"])
+        .order("round_num", { ascending: true });
+      nextPast = (turnData ?? []) as unknown as PastTurn[];
+    }
+
+    // --- one commit ---------------------------------------------------------
+    setRoom(r);
+    setPlayers(nextPlayers);
+    setRound(nextRound);
+    setPrevTurn(nextPrev);
+    setPastTurns(nextPast);
+    if (nextRound) void loadWord(nextRound.word_id);
+    else setWord(null);
   }, [roomId, loadWord]);
 
   // ---- subscription + initial load ----------------------------------------
@@ -197,6 +374,8 @@ export function useMultiplayerGame(roomId: string | null): MultiplayerGame {
       setRound(null);
       setWord(null);
       setPlayers([]);
+      setPastTurns([]);
+      setPrevTurn(null);
       setMyOutcome(null);
       setBestStreak(0);
       submittedRoundRef.current = null;
@@ -291,10 +470,41 @@ export function useMultiplayerGame(roomId: string | null): MultiplayerGame {
   // ---- countdown -----------------------------------------------------------
 
   const roundEnded = Boolean(round?.ended_at);
+  const isElimination = room?.mode === "elimination";
+
+  // THE TURN'S LENGTH IS READ, NEVER COMPUTED.
+  //
+  // In elimination every turn can be a different length: the server's
+  // three-trigger decay curve (player count + two streak stages) produced this
+  // number and froze it on the turn row when the turn opened. The client does
+  // not know decay_params() and must never try to.
+  //
+  // It is read from round_results.round_seconds rather than from submit-turn's
+  // next_round_seconds, and that difference matters: only the player who
+  // answered ever sees that HTTP response. Everyone else — the next holder,
+  // every waiting player, every eliminated spectator — learns the new duration
+  // from this row over Realtime. Both carry the identical server-computed
+  // value, so reading the row is the same number for strictly more clients.
+  const turnSeconds = round?.round_seconds ?? null;
+
   const deadlineMs = useMemo(() => {
+    if (isElimination) {
+      if (!round?.turn_started_at || turnSeconds == null) return null;
+      return new Date(round.turn_started_at).getTime() + turnSeconds * 1000;
+    }
     if (!room?.round_started_at || !constants) return null;
     return new Date(room.round_started_at).getTime() + constants.roundSeconds * 1000;
-  }, [room?.round_started_at, constants]);
+  }, [isElimination, round?.turn_started_at, turnSeconds, room?.round_started_at, constants]);
+
+  /**
+   * Feedback window: the server opened the next turn with its clock set
+   * feedback_ms into the future, so this is simply "that clock hasn't started".
+   * No client-side timer decides it, and every client agrees because they are
+   * all comparing the same server timestamp against the same synced clock.
+   */
+  const turnOpensAtMs =
+    isElimination && round?.turn_started_at ? new Date(round.turn_started_at).getTime() : null;
+  const inFeedback = turnOpensAtMs != null && nowMs < turnOpensAtMs;
 
   useEffect(() => {
     if (room?.status !== "active" || roundEnded) return;
@@ -318,10 +528,17 @@ export function useMultiplayerGame(roomId: string | null): MultiplayerGame {
   // Clamped to the round length: a stale nowMs (throttled background tab, or a
   // clock sync that hasn't landed yet) must never render a countdown LONGER
   // than the round itself, which would be obvious nonsense to the player.
+  //
+  // The clamp is also what makes the feedback window look right in elimination:
+  // during it the deadline is more than a full turn away, so this pins the
+  // display at the new turn's full duration and the bar sits full until the
+  // turn actually opens, instead of over-filling.
+  const clampSeconds = isElimination
+    ? turnSeconds ?? Infinity
+    : constants?.roundSeconds ?? Infinity;
+
   const timeLeft =
-    roundEnded || !deadlineMs
-      ? 0
-      : Math.min(constants?.roundSeconds ?? Infinity, secondsUntil(deadlineMs, nowMs));
+    roundEnded || !deadlineMs ? 0 : Math.min(clampSeconds, secondsUntil(deadlineMs, nowMs));
 
   // ---- round advancement ---------------------------------------------------
   //
@@ -340,6 +557,29 @@ export function useMultiplayerGame(roomId: string | null): MultiplayerGame {
 
   useEffect(() => {
     if (!roomId || !room || room.status !== "active" || !round || !constants) return;
+
+    // ELIMINATION HAS NO CLIENT FAST PATH, and this is a real (documented,
+    // flagged) gap rather than an oversight.
+    //
+    // Race mode's advance-round is callable by any member, so a watching client
+    // ends an expired round in ~150ms and the pg_cron sweep is only the
+    // unattended backstop. Elimination's equivalent is timeout_turn_tx, which is
+    // service_role-only and — as of Session 19 — has NO edge function in front
+    // of it. So a client physically cannot nudge an expired turn, and an
+    // abandoned turn ends only when 0014's 5s sweep gets to it.
+    //
+    // The visible consequence: when a player lets their clock run out, everyone
+    // waits the turn length plus 0.75s grace plus up to 5s, where race mode
+    // would have moved on almost immediately. Measured at ~15-16s on a 13s turn
+    // in Session 19's verification.
+    //
+    // This session may not add edge functions, so it is NOT worked around here.
+    // Calling advance-round would be actively wrong: since 0015 it returns
+    // wrong_mode for an elimination room, and it belongs to the other engine
+    // anyway. Reimplementing the timeout locally is exactly the game-rule
+    // duplication the architecture forbids. Doing nothing is correct; a
+    // `timeout-turn` edge function is the fix, next session.
+    if (room.mode === "elimination") return;
 
     const id = window.setInterval(() => {
       const now = serverNow();
@@ -391,20 +631,69 @@ export function useMultiplayerGame(roomId: string | null): MultiplayerGame {
     ? players.find((p) => p.player_id === round.winner_id)?.display_name ?? "Someone"
     : null;
 
-  const awaitingOthers = Boolean(room?.status === "active" && myOutcome && !roundEnded);
+  // Race-only: elimination resolves a turn the instant it is answered, so there
+  // is never a moment where I have answered and the turn is still open.
+  const awaitingOthers = Boolean(
+    !isElimination && room?.status === "active" && myOutcome && !roundEnded
+  );
+
+  /**
+   * The turn whose outcome should currently be on screen.
+   *
+   * Mid-game that is the PREVIOUS row, because the current one is the freshly
+   * opened turn (see refresh()). At game over there is no next turn, so the
+   * current row is itself the resolved one.
+   */
+  const lastResolved: ResolvedTurn | null = useMemo(() => {
+    if (!isElimination) return null;
+    if (round?.outcome) {
+      return {
+        roundNum: round.round_num,
+        playerId: round.turn_player_id,
+        outcome: round.outcome,
+        word: word?.word ?? null,
+      };
+    }
+    return prevTurn;
+  }, [isElimination, round, word, prevTurn]);
 
   const status: RoundStatus = useMemo(() => {
     if (!room || room.status === "lobby") return "idle";
     if (room.status === "finished") return "finished";
+
+    if (isElimination) {
+      // One turn, one outcome, and every client sees the same one — there is no
+      // per-player result to track here and no awaiting-others state. Feedback
+      // shows during the server's feedback window; otherwise the turn is live.
+      if (inFeedback && lastResolved?.outcome) {
+        return lastResolved.outcome === "correct" ? "correct" : "incorrect";
+      }
+      return "playing";
+    }
+
     // Active. Once the round is closed everyone sees a result; a player who
     // never answered simply didn't get it.
     if (roundEnded) return myOutcome ?? "incorrect";
     // I've answered and the round is still live — locked out, awaiting others.
     if (myOutcome) return myOutcome;
     return "playing";
-  }, [room, roundEnded, myOutcome]);
+  }, [room, roundEnded, myOutcome, isElimination, inFeedback, lastResolved]);
+
+  const nameOf = useCallback(
+    (id: string | null | undefined) =>
+      id ? players.find((p) => p.player_id === id)?.display_name ?? "Someone" : null,
+    [players]
+  );
 
   const resultNote = useMemo(() => {
+    if (isElimination) {
+      if (!inFeedback || !lastResolved?.outcome) return null;
+      const who = lastResolved.playerId === userId ? "You" : nameOf(lastResolved.playerId);
+      const youAre = lastResolved.playerId === userId;
+      if (lastResolved.outcome === "correct") return `${who} spelled it`;
+      if (lastResolved.outcome === "timeout") return `${who} ran out of time`;
+      return youAre ? "You missed it" : `${who} missed it`;
+    }
     if (!roundEnded || !room || room.status !== "active") return null;
     if (!round?.winner_id) return "Time's up — nobody got it.";
     if (round.winner_id === userId) {
@@ -412,7 +701,7 @@ export function useMultiplayerGame(roomId: string | null): MultiplayerGame {
       return ms != null ? `You won this round in ${(ms / 1000).toFixed(1)}s` : "You won this round";
     }
     return `${winnerName} won this round`;
-  }, [roundEnded, room, round, userId, winnerName]);
+  }, [roundEnded, room, round, userId, winnerName, isElimination, inFeedback, lastResolved, nameOf]);
 
   const state: GameState = useMemo(() => {
     if (!room) return IDLE_STATE;
@@ -424,13 +713,84 @@ export function useMultiplayerGame(roomId: string | null): MultiplayerGame {
       streak: me?.streak ?? 0,
       bestStreak,
       timeLeft,
-      wordsRemaining: constants
-        ? Math.max(0, constants.roundsPerGame - room.current_round)
-        : 0,
+      // Elimination has no round budget at all — it ends on elimination, not on
+      // a count (rounds_per_game() belonged to the race model). There is no
+      // honest number to put here, so it reports 0 and the elimination screen
+      // renders its own header instead of ScoreBar's "to go" stat.
+      wordsRemaining:
+        isElimination || !constants
+          ? 0
+          : Math.max(0, constants.roundsPerGame - room.current_round),
       untimed: false,
       hideDefinition: false,
     };
-  }, [room, status, word, me, bestStreak, timeLeft, constants]);
+  }, [room, status, word, me, bestStreak, timeLeft, constants, isElimination]);
+
+  // ---- elimination-only derived facts --------------------------------------
+
+  const amEliminated = Boolean(me?.is_eliminated);
+
+  /**
+   * Is it my turn RIGHT NOW — the single fact that unlocks the guess input.
+   *
+   * DERIVED FROM SERVER FACTS ONLY, DELIBERATELY NOT FROM THE CLOCK.
+   *
+   * The first version of this also required `!inFeedback`, so the input would
+   * not appear until the turn's clock had actually started. That was wrong, and
+   * live testing caught it: `inFeedback` is derived from `nowMs`, which is
+   * updated by an interval, and browsers throttle intervals in hidden tabs (to
+   * ~1/s, and far less after a few minutes). A stale nowMs left inFeedback
+   * true for the whole turn, so the turn holder's input never appeared and they
+   * could only time out. Making the countdown lag is an accepted cost of not
+   * running a second clock (Session 9b); making the CONTROL vanish is not.
+   *
+   * Nothing is lost by dropping it. The window it guarded is ~1.1s of feedback,
+   * and the server is the real guard: an answer that lands before the turn
+   * opens is refused with turn_not_started, which submitGuess already treats as
+   * a no-op. The worst case is now a player seeing their input about a second
+   * early, instead of a player who cannot play at all.
+   */
+  const isMyTurn = Boolean(
+    isElimination &&
+      room?.status === "active" &&
+      userId &&
+      room.current_turn_player_id === userId &&
+      !amEliminated &&
+      !roundEnded
+  );
+
+  // Survivors, defined exactly as the server's elimination_survivors() defines
+  // them: dealt into the rotation (turn_order not null) and not eliminated.
+  const survivors = useMemo(
+    () => players.filter((p) => p.turn_order !== null && !p.is_eliminated).length,
+    [players]
+  );
+
+  const eliminationOrder = useMemo(() => {
+    if (!isElimination) return [];
+    // Each eliminated player's LAST losing turn is the turn that took their
+    // final life — they get no turns after that — so ordering by it is the
+    // order they went out in. This orders players the server already flagged;
+    // it does not decide who is out.
+    const lastLoss = new Map<string, number>();
+    for (const t of pastTurns) {
+      if (!t.turn_player_id) continue;
+      const prev = lastLoss.get(t.turn_player_id) ?? 0;
+      if (t.round_num > prev) lastLoss.set(t.turn_player_id, t.round_num);
+    }
+    return players
+      .filter((p) => p.is_eliminated)
+      .map((p) => ({ id: p.player_id, at: lastLoss.get(p.player_id) ?? 0 }))
+      .sort((a, b) => a.at - b.at)
+      .map((x) => x.id);
+  }, [isElimination, pastTurns, players]);
+
+  const eliminationWinnerId = room?.winner_id ?? null;
+
+  /** Is a resolved turn currently what the screen should be showing? */
+  const showingResolution = Boolean(
+    isElimination && (inFeedback || room?.status === "finished")
+  );
 
   // ---- GameEngineApi surface ----------------------------------------------
 
@@ -449,11 +809,16 @@ export function useMultiplayerGame(roomId: string | null): MultiplayerGame {
     (_tier: DifficultyTier, _options?: GameOptions) => {
       if (!roomId) return;
       setError(null);
-      void startGameFn(roomId).then((res) => {
+      // Which engine starts is read off the room, not chosen here. Since 0015
+      // each endpoint refuses the other's rooms, so picking wrong would be a
+      // clean 409 rather than a corrupted game — but there is no reason to
+      // ever send it wrong.
+      const call = room?.mode === "elimination" ? startEliminationGame : startGameFn;
+      void call(roomId).then((res) => {
         if (!res.ok) setError(res.error);
       });
     },
-    [roomId]
+    [roomId, room?.mode]
   );
 
   /**
@@ -463,6 +828,24 @@ export function useMultiplayerGame(roomId: string | null): MultiplayerGame {
   const submitGuess = useCallback(
     (guess: string) => {
       if (!roomId || !room || room.status !== "active") return;
+
+      if (room.mode === "elimination") {
+        // A UI guard, not the rule. The server decides whose turn it is and
+        // answers not_your_turn / eliminated / turn_not_started to anyone else;
+        // this only avoids firing a request that is certain to be refused.
+        if (!isMyTurn) return;
+        const turnNum = room.current_round;
+        void submitTurn(roomId, turnNum, guess).then((res) => {
+          if (res.ok) return; // the outcome arrives for everyone over Realtime
+          // Expected in a room where the turn moved under us — the realtime
+          // state is about to say so anyway.
+          if (res.error === "stale_round" || res.error === "turn_expired") return;
+          if (res.error === "turn_not_started" || res.error === "not_your_turn") return;
+          setError(res.error);
+        });
+        return;
+      }
+
       if (myOutcome) return; // one attempt per round (enforced server-side too)
 
       const roundNum = room.current_round;
@@ -482,7 +865,7 @@ export function useMultiplayerGame(roomId: string | null): MultiplayerGame {
         setError(res.error);
       });
     },
-    [roomId, room, myOutcome]
+    [roomId, room, myOutcome, isMyTurn]
   );
 
   /**
@@ -512,6 +895,30 @@ export function useMultiplayerGame(roomId: string | null): MultiplayerGame {
     submitGuess,
     skipWord,
     resetToMenu,
-    extras: { awaitingOthers, resultNote, players, isHost, currentUserId: userId, error },
+    extras: {
+      awaitingOthers,
+      resultNote,
+      players,
+      isHost,
+      currentUserId: userId,
+      error,
+      // --- Session 20 -------------------------------------------------------
+      mode: room?.mode ?? "race",
+      livesSetting: room?.lives_setting ?? 3,
+      startingPlayers: room?.starting_players ?? null,
+      tableStreak: room?.table_streak ?? 0,
+      currentTurnPlayerId: room?.current_turn_player_id ?? null,
+      isMyTurn,
+      amEliminated,
+      myLives: me?.lives ?? null,
+      survivors,
+      eliminationOrder,
+      // Shown during the server's feedback window, and again at game over —
+      // where there is no next turn, so the final resolution simply stays up.
+      turnOutcome: showingResolution ? lastResolved?.outcome ?? null : null,
+      lastResolvedTurn: lastResolved,
+      winnerId: eliminationWinnerId,
+      winnerName: nameOf(eliminationWinnerId),
+    },
   };
 }

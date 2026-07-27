@@ -39,11 +39,20 @@ Deploys via `.github/workflows/deploy.yml` on every push to `main`
   that doesn't ship this voice. Its companion `DEFAULT_VOICE_RATE` (0.90)
   applies only when this voice is the one actually in effect, which is why
   `getRate()` has to consult `resolveVoice()` rather than return a constant.
-- `RoundScreen` is the ONLY place that speaks a word. The engine hooks
-  deliberately do not speak: both modes render `RoundScreen`, so one call site
-  gives singleplayer and multiplayer identical narration and keeps the spoken
-  lead-in identical to the displayed one. Adding a speak call to
-  `useGameEngine` or `useMultiplayerGame` would speak every word twice.
+- Word announcement has exactly ONE implementation: `useAnnouncedWord`
+  (`src/hooks/useAnnouncedWord.ts`). Screens call that hook; the engine hooks
+  deliberately never speak. Adding a speak call to `useGameEngine` or
+  `useMultiplayerGame` would speak every word twice, because the screen already
+  announces it.
+  Through Session 17 this rule read "`RoundScreen` is the ONLY place that speaks
+  a word", which was true while both modes rendered `RoundScreen`. Session 20
+  gave elimination its own `TurnScreen` (a turn belongs to one player while
+  everyone else watches — not `RoundScreen`'s shape), so the announcement moved
+  into the hook rather than being copied into a second component. COPYING it
+  is what would have broken the rule; the intent was always one implementation,
+  so the spoken and displayed lead-in can never disagree.
+  Both screens call it, including for eliminated spectators — someone watching
+  the rest of the match should hear the words read out.
   It uses two entry points, and the split is deliberate (Session 17):
   - initial reveal -> `announceWord()`, which speaks a lead-in phrase, pauses,
     then the word, and returns the phrase so the screen can show it;
@@ -517,6 +526,89 @@ Rules this session must keep:
   by that very statement, so both RETURNINGs were refused with 42501 while the
   INSERTs themselves were perfectly legal. It now uses a client-side id and
   `return=minimal`, which is what `src/lib/rooms.ts` always did.
+
+**Elimination mode is playable in the browser** since Session 20. This was a
+`src/`-only session: no migration, no edge function, and no change to
+`checkAnswer`, `useGameEngine` or the 0012 SQL. `GameEngineApi` did NOT need to
+change — everything elimination-specific arrived as `MultiplayerExtras` fields,
+the same seam Session 9b used for `winnerName` / `awaitingOthers`.
+
+New files: `TurnScreen`, `EliminationResults`, `AvatarPicker`, `TimerBar`,
+`useAnnouncedWord`, `lib/avatars.ts`.
+
+Rules this session must keep:
+- **Elimination gets its own screen, not a mode flag inside `RoundScreen`.**
+  `RoundScreen`'s premise is "the word is yours and you are typing it".
+  Elimination inverts it: one player answers while everyone else watches, and
+  some watchers can never answer again. What genuinely fits is shared as
+  COMPONENTS — `TimerBar` (Session 17's bar, extracted unchanged) and
+  `useAnnouncedWord` — not copied.
+- **The guess input is ABSENT for non-holders, not disabled.** For anyone whose
+  turn it is not, the `<form>` is not in the tree at all, so there is nothing to
+  re-enable from devtools and nothing to submit. Verified live: the turn holder's
+  DOM had 1 input / 1 form, both other clients had 0 / 0. The server is still
+  the real guard (`not_your_turn`); this only stops the UI lying about what you
+  can do. A disabled input would also just read as a broken page.
+- **`src/lib/avatars.ts` is the client's ONE copy of the preset list** and must
+  equal `public.avatar_keys()` (0012), which the `room_players.avatar` CHECK
+  validates against. The database is the authority. The coupling is ASSERTED,
+  not just commented: `supabase/scripts/verify_elimination_client.mjs` reads
+  `avatar_keys()` off the live database and fails if the two disagree. Same
+  discipline as Session 15's tier de-duplication. Read stale values back through
+  `coerceAvatar` so an unknown key renders as a bee instead of crashing a roster.
+- **No decay arithmetic on the client, ever.** The turn's length is read from
+  `round_results.round_seconds`, which the server froze when the turn opened —
+  deliberately NOT from `submit-turn`'s `next_round_seconds`, because only the
+  player who answered ever sees that HTTP response. Every other client (the next
+  holder, waiting players, eliminated spectators) learns the duration from that
+  row over Realtime. Both carry the identical server value, so reading the row is
+  the same number for strictly more clients.
+- **The knockout overlay is LATCHED, and dismissed by an elapsed-time check.**
+  `amEliminated` is true forever after, but the moment is one event and gets its
+  own beat (`KNOCKOUT_MS` 4.2s) before spectating begins; latching also captures
+  the word before the next turn arrives underneath. A bare `setTimeout` was the
+  first version and was wrong: background tabs throttle timers and it held the
+  full-screen overlay up for 24s in testing, hiding the rest of the match from
+  the player it had just knocked out. It now re-checks a deadline on every
+  render, which during a live game is far more often than once every 4s.
+- **`isMyTurn` must not depend on the clock.** It derives from server facts only.
+  An earlier version also required `!inFeedback`, which is derived from the
+  ticking `nowMs`; a throttled hidden tab left it true for the whole turn, so the
+  holder's input never appeared and they could only time out. Making the
+  countdown lag is the accepted Session 9b cost; making the CONTROL vanish is not.
+- **`refresh()` reads everything first and commits state LAST**, in one batch.
+  Interleaving `await`s with `setState` ends React's batching and produced renders
+  where `players` (carrying `is_eliminated`) committed a tick before `prevTurn`
+  (carrying the word that did it) — so the elimination moment latched with no
+  word and fell back to generic text. Anything that latches on a transition must
+  be able to trust what it reads alongside it.
+- **Placement is survival order, not score.** 1st is `rooms.winner_id`; 2nd..Nth
+  is `extras.eliminationOrder` REVERSED, so whoever was knocked out last places
+  highest. `eliminationOrder` is presentation-only: it orders players the SERVER
+  already flagged `is_eliminated`, keyed by the round of their last losing turn
+  (which is by definition the turn that took their final life, since a player gets
+  no turns after elimination). Score is displayed but explicitly labelled as not
+  deciding the order. A NULL `winner_id` (the degenerate words-ran-out tie) renders
+  an honest draw rather than "undefined wins".
+- **Leaving mid-game is a forfeit, not an instant elimination.** This was a free
+  choice and it follows 0005: the self-delete policy only permits leaving in
+  'lobby', so a leaver's `room_players` row stays, their score stays on the
+  scoreboard, and their turns simply time out — one life each — until they are
+  eliminated by the ordinary rule. Instant elimination was rejected because it
+  would need a new server transition this session was not allowed to add, and
+  because a dropped connection and a deliberate quit are indistinguishable to the
+  client; letting the existing timeout rule handle both keeps ONE rule. The exit
+  control says so ("you forfeit — your turns will time out and cost a life each")
+  and is a two-step confirm, matching `RoundScreen`'s quit.
+- **The known gap, carried forward from Session 19:** elimination has no client
+  fast path for an expired turn. `timeout_turn_tx` is service_role-only with no
+  edge function in front of it, so a watching client cannot nudge a dead turn the
+  way race mode's `advance-round` can, and an abandoned turn ends only when
+  0014's 5s sweep reaches it. `useMultiplayerGame` therefore returns early for
+  elimination rooms rather than working around it: calling `advance-round` would
+  return `wrong_mode` since 0015 and belongs to the other engine, and
+  reimplementing the timeout locally is exactly the duplication the architecture
+  forbids. A `timeout-turn` edge function is the fix.
 
 ## Naming note
 Local dev folder/npm package name may still say "spelling-race" from

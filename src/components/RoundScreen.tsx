@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, Volume2 } from "lucide-react";
 import type { GameState } from "../types";
-import { announceWord, repeatWord, stopSpeaking } from "../lib/tts";
+import { repeatWord, stopSpeaking } from "../lib/tts";
+import { useAnnouncedWord } from "../hooks/useAnnouncedWord";
 import { ScoreBar } from "./ScoreBar";
+import { TimerBar } from "./TimerBar";
 
 export function RoundScreen({
   state,
@@ -31,7 +33,6 @@ export function RoundScreen({
   canSkip?: boolean;
 }) {
   const [guess, setGuess] = useState("");
-  const [leadIn, setLeadIn] = useState<string | null>(null);
   // Two-step, matching the settings panel's reset: quitting throws away a run in
   // progress, and this control sits next to a timed round where a mis-tap is
   // easy. Same reason it isn't a window.confirm — that blocks the page.
@@ -41,45 +42,15 @@ export function RoundScreen({
   const wordId = state.currentWord?.id;
   const wordText = state.currentWord?.word;
 
-  // Full scale for the draining timer bar, in seconds.
-  //
-  // Taken from the largest timeLeft this word has been seen with, NOT from a
-  // round-length constant. That is what lets one bar serve both engines: the
-  // singleplayer round length (ROUND_SECONDS) and the multiplayer one
-  // (round_seconds() by RPC, on the server clock) both reach this component as
-  // the opening value of state.timeLeft, so reading the state gets whichever
-  // engine is driving without importing either constant — CLAUDE.md forbids the
-  // multiplayer path from ever seeing the client-side one.
-  //
-  // No new timing lives here: this is arithmetic on state that already ticks. A
-  // client that joins a round late simply scales to the time it actually had,
-  // so the bar still empties exactly when the countdown does.
-  const spanRef = useRef<{ id: string | undefined; seconds: number }>({
-    id: undefined,
-    seconds: 0,
-  });
-  if (spanRef.current.id !== wordId) {
-    spanRef.current = { id: wordId, seconds: state.timeLeft };
-  } else if (state.timeLeft > spanRef.current.seconds) {
-    spanRef.current.seconds = state.timeLeft;
-  }
-
   useEffect(() => {
     setGuess("");
     inputRef.current?.focus();
   }, [wordId]);
 
-  // Announcing from here — rather than from each engine hook — is what gives
-  // singleplayer and multiplayer identical narration from one implementation:
-  // both render this component, so both get the lead-in for free. It also keeps
-  // the spoken phrase and the displayed phrase from ever disagreeing, since the
-  // same call produces both.
-  useEffect(() => {
-    if (!wordText) return;
-    // Small beat so the new word paints before audio starts.
-    const t = window.setTimeout(() => setLeadIn(announceWord(wordText)), 200);
-    return () => window.clearTimeout(t);
-  }, [wordId, wordText]);
+  // Announcement moved to a shared hook in Session 20 so the elimination turn
+  // screen uses the same implementation rather than a copy. The engine hooks
+  // still never speak — see useAnnouncedWord for the full reasoning.
+  const leadIn = useAnnouncedWord(wordId, wordText);
 
   const scrollInputIntoView = () => {
     inputRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
@@ -89,13 +60,6 @@ export function RoundScreen({
 
   const feedback =
     state.status === "correct" ? "correct" : state.status === "incorrect" ? "incorrect" : null;
-
-  const roundSpan = spanRef.current.seconds;
-  const remaining = roundSpan > 0 ? Math.max(0, Math.min(1, state.timeLeft / roundSpan)) : 0;
-  // Colour is a third state, not a gradient: two thresholds keep the bar
-  // readable in both themes and mean the shift is a transition between two
-  // tokens rather than a computed colour nobody can theme.
-  const urgency = remaining <= 0.2 ? " critical" : remaining <= 0.45 ? " low" : "";
 
   function handleExit() {
     // Leaving mid-announcement would otherwise keep the narrator talking over
@@ -182,25 +146,11 @@ export function RoundScreen({
         />
       </form>
 
-      {/* Draining timer bar. Practice mode has no clock at all, so it renders
-          nothing rather than an empty track.
-
-          aria-hidden: ScoreBar already exposes the same countdown as text
-          ("13s left"), and a second announcement of it would be noise.
-
-          The width is a plain read of state.timeLeft; the one-second linear
-          transition in App.css is what turns the engines' whole-second ticks
-          into a continuous drain, so there is no second timer anywhere. Keyed
-          by word so a new round snaps back to full instead of animating up. */}
-      {!state.untimed && (
-        <div className="timer-track" aria-hidden>
-          <div
-            key={wordId}
-            className={`timer-fill${urgency}`}
-            style={{ width: `${remaining * 100}%` }}
-          />
-        </div>
-      )}
+      {/* Draining timer bar — extracted to TimerBar in Session 20 and shared
+          with the elimination turn screen. Same component, same rules; see
+          TimerBar for why its scale comes from the state rather than a
+          constant. */}
+      <TimerBar wordId={wordId} timeLeft={state.timeLeft} untimed={state.untimed} />
 
       {/* Answered, round still live: no reveal — others are still racing. */}
       {awaitingOthers && (

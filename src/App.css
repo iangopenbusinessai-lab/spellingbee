@@ -1265,7 +1265,30 @@
   width: 100%;
 }
 
-.turn-stats { grid-template-columns: repeat(5, 1fr); }
+/* Four stats since the Session 20 follow-up (SCORE removed — see TurnScreen).
+   Everything here is scoped to .turn-stats: .score-bar / .stat / .stat-label
+   are shared with singleplayer and race mode, which are correct as they are and
+   must not shift. */
+.turn-stats {
+  /* Tops aligned, so the streak's extra sub-label lengthens its own column
+     instead of pushing the other three values out of line. */
+  align-items: flex-start;
+}
+
+/* The clock is the last item in a space-between row, so right-aligning it keeps
+   the value under its own (wider) label rather than hanging left of it. */
+.turn-stats .stat:last-child { align-items: flex-end; }
+
+/* Sub-label under STREAK. Lower case and quiet: it is an explanation, not a
+   reading, and must not compete with the four numbers. */
+.turn-stats .stat-hint {
+  margin-top: 3px;
+  max-width: 11ch;
+  font-size: 9.5px;
+  line-height: 1.25;
+  color: var(--muted);
+  opacity: 0.8;
+}
 
 .turn-banner {
   display: flex;

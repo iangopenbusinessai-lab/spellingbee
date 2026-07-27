@@ -194,30 +194,44 @@ export function TurnScreen({
         )}
       </div>
 
-      {/* Elimination's own header. ScoreBar's "to go" counts down a round
-          budget this mode does not have, so the stats here are the ones that
-          actually govern play: your lives, who is left, the table streak that
-          drives the decay, and the clock. */}
+      {/* Elimination's own header, and deliberately NOT a relabelled ScoreBar.
+          ScoreBar's "to go" counts down a round budget this mode does not have,
+          and three further things were wrong when this was first written:
+
+          - SCORE is gone. Points do accrue here (apply_turn_outcome awards
+            10 + seconds left, and EliminationResults still shows the totals),
+            but placement in this mode is how long you SURVIVED, not points.
+            A running total is not a number anyone acts on mid-turn, so it does
+            not deserve the most prominent slot.
+          - No two labels repeat. "3 LEFT" (players) sat beside "12s LEFT"
+            (seconds) reading the same word twice, at the exact moment — mid-turn,
+            under a clock — when a glance has to be unambiguous.
+          - STREAK is the table-wide run of correct answers and is the most
+            game-relevant number on the bar, because it is what shortens the
+            next turn. It now sits immediately beside the clock it acts on, and
+            carries a plain-language sub-label saying so.
+
+          The sub-label names no thresholds on purpose. The numbers that trigger
+          the decay live in decay_params() on the server; stating them here would
+          put a copy of the decay contract in a file that cannot see it change.
+          It says what the streak DOES, not when it fires. */}
       <div className="score-bar turn-stats">
         <div className="stat">
-          <span className="stat-value">{state.score}</span>
-          <span className="stat-label">score</span>
-        </div>
-        <div className="stat">
           <span className="stat-value">{amEliminated ? "—" : myLives ?? "—"}</span>
-          <span className="stat-label">lives</span>
+          <span className="stat-label">your lives</span>
         </div>
         <div className="stat">
           <span className="stat-value">{survivors}</span>
-          <span className="stat-label">left</span>
+          <span className="stat-label">survivors</span>
         </div>
         <div className="stat">
           <span className="stat-value">{tableStreak}</span>
-          <span className="stat-label">run</span>
+          <span className="stat-label">streak</span>
+          <span className="stat-hint">speeds the clock up</span>
         </div>
         <div className="stat timer" data-low={state.timeLeft <= 5}>
           <span className="stat-value">{state.timeLeft}s</span>
-          <span className="stat-label">left</span>
+          <span className="stat-label">time left</span>
         </div>
       </div>
 

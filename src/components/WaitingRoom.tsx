@@ -7,12 +7,14 @@ import {
   startEliminationGame,
   startGame,
   subscribePlayers,
+  updateAvatar,
   livesLabel,
   type PlayerRow,
   type RoomInfo,
 } from "../lib/rooms";
-import { coerceAvatar } from "../lib/avatars";
-import { AvatarBadge } from "./AvatarPicker";
+import { coerceAvatar, type AvatarKey } from "../lib/avatars";
+import { setAvatar as persistAvatar } from "../lib/storage";
+import { AvatarBadge, AvatarPicker } from "./AvatarPicker";
 
 import { TIER_META } from "../lib/tiers";
 
@@ -57,6 +59,29 @@ export function WaitingRoom({
 
   const canStart = isHost && players.length >= 2;
   const isElimination = room.mode === "elimination";
+
+  // My current avatar comes from the roster rather than from local state, so it
+  // reflects what the SERVER has — including a change made from another device.
+  const myAvatar: AvatarKey = coerceAvatar(
+    players.find((p) => p.player_id === currentUserId)?.avatar
+  );
+
+  async function handleAvatarChange(next: AvatarKey) {
+    if (next === myAvatar) return;
+    // Optimistic only for MY OWN row and only cosmetically: the authoritative
+    // value still arrives via the realtime re-fetch below, and an off-list key
+    // would be refused by the CHECK constraint before it ever got here.
+    setPlayers((prev) =>
+      prev.map((p) => (p.player_id === currentUserId ? { ...p, avatar: next } : p))
+    );
+    persistAvatar(next); // so the next room I join starts from this choice
+    try {
+      await updateAvatar(room.id, next);
+    } catch {
+      // Put the server's value back rather than leaving a lie on screen.
+      fetchPlayers(room.id).then(setPlayers).catch(() => {});
+    }
+  }
 
   // Friendly text for the named errors either start endpoint can return.
   // Anything else is surfaced raw rather than swallowed.
@@ -111,6 +136,12 @@ export function WaitingRoom({
           standing wins.
         </p>
       )}
+
+      {/* Change your avatar without leaving the room. Same preset set as the
+          lobby (lib/avatars.ts), same component — no second list, no new art.
+          Everyone else sees the change over the existing room_players realtime
+          subscription, which already re-fetches on any UPDATE. */}
+      <AvatarPicker value={myAvatar} onChange={handleAvatarChange} label="Your avatar" />
 
       <div className="player-list">
         <span className="player-list-label">

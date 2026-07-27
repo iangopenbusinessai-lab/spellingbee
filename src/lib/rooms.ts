@@ -215,6 +215,31 @@ export async function leaveRoom(roomId: string): Promise<void> {
   if (error) throw error;
 }
 
+/**
+ * Change my avatar from inside a room (Session 22).
+ *
+ * NO MIGRATION BACKS THIS — none was needed. `0012` already granted
+ * `update (display_name, avatar)` to `authenticated`, and `0002`'s
+ * "player can update own row" policy pins USING/WITH CHECK to `auth.uid()`, so
+ * this is the existing allowlist being used rather than widened. Verified
+ * against the live project: avatar PATCH -> 204, an off-list key -> 400 (the
+ * `room_players_avatar_check` CHECK against `avatar_keys()`), and `lives` -> 403
+ * (42501), i.e. the column grant is still exactly the two cosmetic columns.
+ *
+ * The write goes straight to the table rather than through an edge function for
+ * the same reason joining does: there is no game rule here to enforce, and the
+ * CHECK constraint — not client convention — is what rejects a bad key.
+ */
+export async function updateAvatar(roomId: string, avatar: AvatarKey): Promise<void> {
+  const uid = await requireUid();
+  const { error } = await getSupabase()
+    .from("room_players")
+    .update({ avatar })
+    .eq("room_id", roomId)
+    .eq("player_id", uid);
+  if (error) throw error;
+}
+
 export async function fetchPlayers(roomId: string): Promise<PlayerRow[]> {
   const { data, error } = await getSupabase()
     .from("room_players")

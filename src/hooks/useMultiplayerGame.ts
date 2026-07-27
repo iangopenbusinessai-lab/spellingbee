@@ -139,6 +139,11 @@ export interface MultiplayerExtras {
   currentTurnPlayerId: string | null;
   /** Is it MY turn? The only thing that unlocks the guess input. */
   isMyTurn: boolean;
+  /**
+   * My answer is in flight. Acknowledges the submission only — it says nothing
+   * about whether the answer was right, which is still the server's to say.
+   */
+  submitting: boolean;
   /** Have I been knocked out? Switches me to the spectator view. */
   amEliminated: boolean;
   /** My remaining lives, or null before the game starts. */
@@ -210,6 +215,25 @@ export function useMultiplayerGame(roomId: string | null): MultiplayerGame {
   // response to submit-answer — never guessed locally, never optimistic.
   const [myOutcome, setMyOutcome] = useState<RoundStatus | null>(null);
   const submittedRoundRef = useRef<number | null>(null);
+
+  // --- elimination: my own submission in flight, and its verdict --------------
+  //
+  // Session 22. `submitting` is set the instant the request leaves, so the UI can
+  // acknowledge the keypress instead of sitting silent for the round trip. It
+  // says "this was sent", never "this was right" — correctness still comes only
+  // from the server.
+  //
+  // `ownResult` is that server's verdict, taken from submit-turn's OWN HTTP
+  // response instead of waiting for the same fact to come back around over
+  // Realtime. This is NOT a local outcome computation and does not weaken the
+  // Session 9b rule: it is the identical value `apply_turn_outcome` broadcasts,
+  // read from the direct channel the answering client already has open. Measured
+  // before this change, the broadcast path added 0.9-2.4s of dead air AFTER the
+  // server had already answered this very client (775ms/3196ms, 497/1649,
+  // 486/1370). Everyone else still learns the outcome over Realtime — that is
+  // what the broadcast is for.
+  const [submitting, setSubmitting] = useState(false);
+  const [ownResult, setOwnResult] = useState<ResolvedTurn | null>(null);
 
   const [bestStreak, setBestStreak] = useState(0);
 
@@ -378,6 +402,8 @@ export function useMultiplayerGame(roomId: string | null): MultiplayerGame {
       setPrevTurn(null);
       setMyOutcome(null);
       setBestStreak(0);
+      setSubmitting(false);
+      setOwnResult(null);
       submittedRoundRef.current = null;
       return;
     }
@@ -646,16 +672,43 @@ export function useMultiplayerGame(roomId: string | null): MultiplayerGame {
    */
   const lastResolved: ResolvedTurn | null = useMemo(() => {
     if (!isElimination) return null;
-    if (round?.outcome) {
-      return {
-        roundNum: round.round_num,
-        playerId: round.turn_player_id,
-        outcome: round.outcome,
-        word: word?.word ?? null,
-      };
+    const fromRealtime: ResolvedTurn | null = round?.outcome
+      ? {
+          roundNum: round.round_num,
+          playerId: round.turn_player_id,
+          outcome: round.outcome,
+          word: word?.word ?? null,
+        }
+      : prevTurn;
+
+    // My own turn's verdict wins while it is at least as recent as the broadcast.
+    // Both carry the same server decision; this one simply arrived first. Once
+    // Realtime catches up the two agree, so the swap is invisible.
+    if (ownResult && (!fromRealtime || ownResult.roundNum >= fromRealtime.roundNum)) {
+      return ownResult;
     }
-    return prevTurn;
-  }, [isElimination, round, word, prevTurn]);
+    return fromRealtime;
+  }, [isElimination, round, word, prevTurn, ownResult]);
+
+  // Drop my own copy once the broadcast has moved past it and its feedback
+  // window has closed — from then on the Realtime state is complete on its own.
+  useEffect(() => {
+    if (!ownResult || !room) return;
+    if (room.current_round > ownResult.roundNum && !inFeedback) setOwnResult(null);
+  }, [ownResult, room, inFeedback]);
+
+  /**
+   * The window between my request being answered and the broadcast landing.
+   * `inFeedback` can only become true once the NEXT turn's row has arrived over
+   * Realtime, so without this the answering player stares at an unchanged screen
+   * for the whole gap — the 0.9-2.4s measured before this change.
+   */
+  const ownGap = Boolean(
+    ownResult && room?.status === "active" && room.current_round <= ownResult.roundNum
+  );
+
+  /** Is a resolved turn what the screen should currently be showing? */
+  const resolutionVisible = inFeedback || ownGap;
 
   const status: RoundStatus = useMemo(() => {
     if (!room || room.status === "lobby") return "idle";
@@ -664,8 +717,9 @@ export function useMultiplayerGame(roomId: string | null): MultiplayerGame {
     if (isElimination) {
       // One turn, one outcome, and every client sees the same one — there is no
       // per-player result to track here and no awaiting-others state. Feedback
-      // shows during the server's feedback window; otherwise the turn is live.
-      if (inFeedback && lastResolved?.outcome) {
+      // shows during the server's feedback window (and, for the player who
+      // answered, from the moment their own request came back).
+      if (resolutionVisible && lastResolved?.outcome) {
         return lastResolved.outcome === "correct" ? "correct" : "incorrect";
       }
       return "playing";
@@ -677,7 +731,7 @@ export function useMultiplayerGame(roomId: string | null): MultiplayerGame {
     // I've answered and the round is still live — locked out, awaiting others.
     if (myOutcome) return myOutcome;
     return "playing";
-  }, [room, roundEnded, myOutcome, isElimination, inFeedback, lastResolved]);
+  }, [room, roundEnded, myOutcome, isElimination, resolutionVisible, lastResolved]);
 
   const nameOf = useCallback(
     (id: string | null | undefined) =>
@@ -687,7 +741,7 @@ export function useMultiplayerGame(roomId: string | null): MultiplayerGame {
 
   const resultNote = useMemo(() => {
     if (isElimination) {
-      if (!inFeedback || !lastResolved?.outcome) return null;
+      if (!resolutionVisible || !lastResolved?.outcome) return null;
       const who = lastResolved.playerId === userId ? "You" : nameOf(lastResolved.playerId);
       const youAre = lastResolved.playerId === userId;
       if (lastResolved.outcome === "correct") return `${who} spelled it`;
@@ -701,7 +755,7 @@ export function useMultiplayerGame(roomId: string | null): MultiplayerGame {
       return ms != null ? `You won this round in ${(ms / 1000).toFixed(1)}s` : "You won this round";
     }
     return `${winnerName} won this round`;
-  }, [roundEnded, room, round, userId, winnerName, isElimination, inFeedback, lastResolved, nameOf]);
+  }, [roundEnded, room, round, userId, winnerName, isElimination, resolutionVisible, lastResolved, nameOf]);
 
   const state: GameState = useMemo(() => {
     if (!room) return IDLE_STATE;
@@ -789,7 +843,7 @@ export function useMultiplayerGame(roomId: string | null): MultiplayerGame {
 
   /** Is a resolved turn currently what the screen should be showing? */
   const showingResolution = Boolean(
-    isElimination && (inFeedback || room?.status === "finished")
+    isElimination && (resolutionVisible || room?.status === "finished")
   );
 
   // ---- GameEngineApi surface ----------------------------------------------
@@ -833,10 +887,26 @@ export function useMultiplayerGame(roomId: string | null): MultiplayerGame {
         // A UI guard, not the rule. The server decides whose turn it is and
         // answers not_your_turn / eliminated / turn_not_started to anyone else;
         // this only avoids firing a request that is certain to be refused.
-        if (!isMyTurn) return;
+        if (!isMyTurn || submitting) return;
         const turnNum = room.current_round;
+        // The word I am answering, captured before the next turn replaces it —
+        // the feedback line needs it to say "the word was X".
+        const submittedWord = word?.word ?? null;
+
+        setSubmitting(true);
         void submitTurn(roomId, turnNum, guess).then((res) => {
-          if (res.ok) return; // the outcome arrives for everyone over Realtime
+          setSubmitting(false);
+          if (res.ok && res.data) {
+            // The server's own verdict, on the direct channel. Everyone else
+            // gets the same fact over Realtime a beat later.
+            setOwnResult({
+              roundNum: turnNum,
+              playerId: userId,
+              outcome: res.data.outcome,
+              word: submittedWord,
+            });
+            return;
+          }
           // Expected in a room where the turn moved under us — the realtime
           // state is about to say so anyway.
           if (res.error === "stale_round" || res.error === "turn_expired") return;
@@ -865,7 +935,7 @@ export function useMultiplayerGame(roomId: string | null): MultiplayerGame {
         setError(res.error);
       });
     },
-    [roomId, room, myOutcome, isMyTurn]
+    [roomId, room, myOutcome, isMyTurn, submitting, word, userId]
   );
 
   /**
@@ -909,6 +979,7 @@ export function useMultiplayerGame(roomId: string | null): MultiplayerGame {
       tableStreak: room?.table_streak ?? 0,
       currentTurnPlayerId: room?.current_turn_player_id ?? null,
       isMyTurn,
+      submitting,
       amEliminated,
       myLives: me?.lives ?? null,
       survivors,

@@ -1281,11 +1281,18 @@
    The action and its timer bar are one unit (6px), per Session 17 — the bar
    drains under the thing it is timing. The token row therefore goes BELOW the
    bar rather than between input and bar, which would have split that pair. */
+/* max-width matches .round-screen's 480px, which has been the gameplay column
+   width since the original scaffold. TurnScreen (Session 20) and
+   EliminationResults were written with `width: 100%` and never inherited it, so
+   on a wide viewport they ran edge to edge while singleplayer and race stayed in
+   their column. This is the missing constraint, not a new value: .app-shell is
+   already a centering flex container, so a max-width is all either screen needs. */
 .turn-screen {
   display: flex;
   flex-direction: column;
   gap: 0;
   width: 100%;
+  max-width: 480px;
 }
 
 .turn-screen > * { margin-bottom: 14px; }
@@ -1308,6 +1315,23 @@
 .turn-screen .spectating { margin-bottom: 6px; }
 
 .turn-screen .timer-track { margin-bottom: 12px; }
+
+/* "Checking…" while my own answer is in flight. Quiet on purpose: it reports
+   that the request left, not what the answer was. */
+.turn-screen .submit-pending {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin: 6px 0 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.turn-screen .guess-input:disabled { opacity: 0.7; }
+
+.spin { animation: spin 0.9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
 
 /* Four stats since the Session 20 follow-up (SCORE removed — see TurnScreen).
    Everything here is scoped to .turn-stats: .score-bar / .stat / .stat-label
@@ -1470,6 +1494,49 @@
 
 .ptoken-lives .life { color: var(--life); fill: var(--life); }
 
+/* --- life lost (Session 22) ----------------------------------------------
+   A smaller, more frequent beat than the knockout overlay: it fires on every
+   miss and every timeout, for whichever player it happened to.
+
+   TWO LAYERS, and the split is what makes reduce-motion safe:
+     - the RIM below is a plain static declaration, so it is unaffected by the
+       global reduce-motion block and stays visible for the whole ~700ms the
+       .struck class is held by TurnScreen's JS timer;
+     - the ripple is a CSS animation layered on top, pure decoration.
+   Under reduce-motion the ripple collapses to nothing and the rim alone still
+   says "this player just lost a life" — the same guarantee the ghost drift has.
+------------------------------------------------------------------------- */
+.ptoken.struck .ptoken-disc {
+  border-color: var(--life);
+  box-shadow: 0 0 0 2px var(--life);
+}
+
+/* The turn ring and the life-loss rim can coincide (you miss on your own turn).
+   Life loss is the newer, louder event, so it wins the rim; the honey halo
+   stays underneath so you can still see whose turn it is. */
+.ptoken.struck.active .ptoken-disc {
+  box-shadow: 0 0 0 2px var(--life), 0 0 14px var(--honey-glow);
+}
+
+.ptoken.struck .ptoken-lives {
+  border-color: var(--life);
+  color: var(--life);
+}
+
+.ptoken-hit {
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  border: 2px solid var(--life);
+  pointer-events: none;
+  animation: life-hit 0.6s ease-out;
+}
+
+@keyframes life-hit {
+  from { opacity: 0.9; transform: scale(0.82); }
+  to   { opacity: 0;   transform: scale(1.35); }
+}
+
 /* --- ghost state ---------------------------------------------------------
    Not just a dimmed avatar: the glyph is SWAPPED for a ghost, the disc goes
    translucent and dashed, and the colour drops to --out. The drift below is
@@ -1603,6 +1670,7 @@
   flex-direction: column;
   gap: 16px;
   width: 100%;
+  max-width: 480px;   /* same gameplay column as .round-screen / .turn-screen */
 }
 
 .champion {

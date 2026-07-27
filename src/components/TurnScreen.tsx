@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, Eye, Ghost, Heart, Volume2 } from "lucide-react";
+import { ArrowLeft, Eye, Ghost, Heart, Loader2, Volume2 } from "lucide-react";
 import type { GameState } from "../types";
 import type { MultiplayerExtras } from "../hooks/useMultiplayerGame";
 import { repeatWord, stopSpeaking } from "../lib/tts";
@@ -76,7 +76,56 @@ export function TurnScreen({
     turnOutcome,
     lastResolvedTurn,
     resultNote,
+    submitting,
   } = extras;
+
+  // --- life-loss beat (Session 22) -------------------------------------------
+  //
+  // Fires whenever ANY player's `lives` drops, which is a different and much
+  // more frequent event than Session 20's knockout overlay: a knockout happens
+  // once per player per game, this happens on every miss and every timeout.
+  //
+  // Driven off the server's `lives` column, so it fires for the timeout path too
+  // — no client-side notion of "what just happened" is involved, only a diff of
+  // two server values.
+  //
+  // The struck set is held by a JS timer rather than by the CSS animation's own
+  // duration. That is deliberate and is what makes the reduce-motion story work:
+  // the class stays applied for the full window either way, so the STATIC part of
+  // the cue (a red rim, see .ptoken.struck in App.css) is visible for the same
+  // time whether or not the animation ran.
+  const [struck, setStruck] = useState<Record<string, number>>({});
+  const prevLives = useRef<Map<string, number> | null>(null);
+
+  useEffect(() => {
+    const next = new Map<string, number>();
+    const hit: string[] = [];
+    for (const p of players) {
+      if (p.turn_order === null) continue;
+      const before = prevLives.current?.get(p.player_id);
+      if (before !== undefined && p.lives < before) hit.push(p.player_id);
+      next.set(p.player_id, p.lives);
+    }
+    // First observation only seeds the baseline — joining a game already in
+    // progress must not flash every token at once.
+    const seeded = prevLives.current !== null;
+    prevLives.current = next;
+    if (!seeded || hit.length === 0) return;
+
+    setStruck((s) => {
+      const n = { ...s };
+      for (const id of hit) n[id] = (n[id] ?? 0) + 1;
+      return n;
+    });
+    const t = window.setTimeout(() => {
+      setStruck((s) => {
+        const n = { ...s };
+        for (const id of hit) delete n[id];
+        return n;
+      });
+    }, 700);
+    return () => window.clearTimeout(t);
+  }, [players]);
 
   // Everyone announces, including spectators: an eliminated player watching the
   // rest of the match should hear the words read out, not watch a silent bee.
@@ -274,12 +323,26 @@ export function TurnScreen({
             className="guess-input"
             value={guess}
             onChange={(e) => setGuess(e.target.value)}
+            /* Disabled only while MY OWN answer is in flight, and only ever for
+               the turn holder. This is the one place a disabled input is honest:
+               you did something, it is being checked, and a second submission
+               would be refused anyway (already_submitted). It never disables a
+               non-holder — those get no input at all. */
+            disabled={submitting}
             autoComplete="off"
             autoCapitalize="off"
             autoCorrect="off"
             spellCheck={false}
-            placeholder="Your turn — type the word"
+            placeholder={submitting ? "" : "Your turn — type the word"}
           />
+          {/* Acknowledges the keypress during the round trip. Says only that the
+              answer was SENT — never guesses whether it was right. */}
+          {submitting && (
+            <p className="submit-pending" role="status">
+              <Loader2 size={14} aria-hidden className="spin" />
+              Checking…
+            </p>
+          )}
         </form>
       ) : amEliminated ? (
         <div className="spectating" role="status">
@@ -349,7 +412,8 @@ export function TurnScreen({
                 "ptoken" +
                 (p.is_eliminated ? " ghost" : "") +
                 (isTurn ? " active" : "") +
-                (isYou ? " you" : "")
+                (isYou ? " you" : "") +
+                (struck[p.player_id] ? " struck" : "")
               }
               aria-label={
                 p.is_eliminated
@@ -373,6 +437,14 @@ export function TurnScreen({
                   <Ghost size={24} aria-hidden className="ptoken-ghost-icon" />
                 ) : (
                   <AvatarBadge avatar={p.avatar} size={24} />
+                )}
+
+                {/* The ripple. Remounted by a changing key, because a CSS
+                    animation replays on mount, not on re-render (the Session 12
+                    streak-pulse rule). Purely decorative — the red rim on
+                    .ptoken.struck is the part that carries the meaning. */}
+                {struck[p.player_id] && (
+                  <span key={struck[p.player_id]} className="ptoken-hit" aria-hidden />
                 )}
 
                 {!p.is_eliminated && (

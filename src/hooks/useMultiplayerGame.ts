@@ -94,6 +94,13 @@ export interface ResolvedTurn {
   playerId: string | null;
   outcome: TurnOutcome | null;
   word: string | null;
+  /**
+   * Server-measured answer time in ms, from `round_results.response_time_ms`.
+   * Null for a wrong answer or a timeout — the server only records a time for a
+   * correct one — and null on the fast path until the row lands, because
+   * submit-turn's response does not carry it and inventing one is not an option.
+   */
+  responseMs: number | null;
 }
 
 /** Server-owned timing constants. Never hardcoded here — see fetchConstants. */
@@ -197,6 +204,7 @@ const IDLE_STATE: GameState = {
   // behaviour every screen had before the fields existed.
   untimed: false,
   hideDefinition: false,
+  lastResponseMs: null,
 };
 
 export function useMultiplayerGame(roomId: string | null): MultiplayerGame {
@@ -234,6 +242,12 @@ export function useMultiplayerGame(roomId: string | null): MultiplayerGame {
   // what the broadcast is for.
   const [submitting, setSubmitting] = useState(false);
   const [ownResult, setOwnResult] = useState<ResolvedTurn | null>(null);
+
+  // Race mode: my own answer's server-measured time, straight out of
+  // submit-answer's payload. Elimination sources the same fact from the resolved
+  // round row instead (see ResolvedTurn.responseMs) because submit-turn does not
+  // return it. Neither path measures anything client-side.
+  const [raceResponseMs, setRaceResponseMs] = useState<number | null>(null);
 
   const [bestStreak, setBestStreak] = useState(0);
 
@@ -338,7 +352,7 @@ export function useMultiplayerGame(roomId: string | null): MultiplayerGame {
     if (r.mode === "elimination" && r.current_round > 1) {
       const { data: prevData } = await supabase
         .from("round_results")
-        .select("round_num,word_id,turn_player_id,outcome")
+        .select("round_num,word_id,turn_player_id,outcome,response_time_ms")
         .eq("room_id", roomId)
         .eq("round_num", r.current_round - 1)
         .maybeSingle();
@@ -348,6 +362,7 @@ export function useMultiplayerGame(roomId: string | null): MultiplayerGame {
           word_id: string;
           turn_player_id: string | null;
           outcome: TurnOutcome | null;
+          response_time_ms: number | null;
         };
         const { data: w } = await supabase
           .from("words")
@@ -359,6 +374,7 @@ export function useMultiplayerGame(roomId: string | null): MultiplayerGame {
           playerId: pv.turn_player_id,
           outcome: pv.outcome,
           word: (w?.word as string | undefined) ?? null,
+          responseMs: pv.response_time_ms,
         };
       }
     }
@@ -485,6 +501,7 @@ export function useMultiplayerGame(roomId: string | null): MultiplayerGame {
   useEffect(() => {
     if (submittedRoundRef.current !== currentRound) {
       setMyOutcome(null);
+      setRaceResponseMs(null); // last round's time must not follow me into this one
     }
   }, [currentRound]);
 
@@ -678,6 +695,7 @@ export function useMultiplayerGame(roomId: string | null): MultiplayerGame {
           playerId: round.turn_player_id,
           outcome: round.outcome,
           word: word?.word ?? null,
+          responseMs: round.response_time_ms,
         }
       : prevTurn;
 
@@ -777,8 +795,29 @@ export function useMultiplayerGame(roomId: string | null): MultiplayerGame {
           : Math.max(0, constants.roundsPerGame - room.current_round),
       untimed: false,
       hideDefinition: false,
+      // Session 23. Both branches are SERVER-measured: elimination reads the
+      // resolved turn row's response_time_ms, race reads submit-answer's payload.
+      // Only ever populated for a correct answer of MINE — someone else's time is
+      // not my feedback line, and a miss or timeout has no time to report.
+      lastResponseMs: isElimination
+        ? lastResolved?.playerId === userId
+          ? lastResolved?.responseMs ?? null
+          : null
+        : raceResponseMs,
     };
-  }, [room, status, word, me, bestStreak, timeLeft, constants, isElimination]);
+  }, [
+    room,
+    status,
+    word,
+    me,
+    bestStreak,
+    timeLeft,
+    constants,
+    isElimination,
+    lastResolved,
+    userId,
+    raceResponseMs,
+  ]);
 
   // ---- elimination-only derived facts --------------------------------------
 
@@ -904,6 +943,10 @@ export function useMultiplayerGame(roomId: string | null): MultiplayerGame {
               playerId: userId,
               outcome: res.data.outcome,
               word: submittedWord,
+              // submit-turn does not return the elapsed time, and the client's
+              // own stopwatch is not the server's number — so this stays null
+              // and the real value arrives with the round row a beat later.
+              responseMs: null,
             });
             return;
           }
@@ -924,6 +967,8 @@ export function useMultiplayerGame(roomId: string | null): MultiplayerGame {
       void submitAnswer(roomId, roundNum, guess).then((res) => {
         if (res.ok && res.data) {
           setMyOutcome(res.data.correct ? "correct" : "incorrect");
+          // Only a correct answer gets a time — a miss has nothing to report.
+          setRaceResponseMs(res.data.correct ? res.data.response_time_ms ?? null : null);
           return;
         }
         if (res.error === "already_submitted") {

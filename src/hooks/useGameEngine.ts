@@ -69,12 +69,19 @@ const initialState: GameState = {
   wordsRemaining: 0,
   untimed: false,
   hideDefinition: false,
+  lastResponseMs: null,
 };
 
 export function useGameEngine(): GameEngineApi {
   const [state, setState] = useState<GameState>(initialState);
   const queueRef = useRef<WordEntry[]>([]);
   const timerRef = useRef<number | null>(null);
+  // When the current word was revealed. Session 23: this is what makes the
+  // response time real rather than derived from `timeLeft`, which only moves in
+  // whole seconds and would quantise every answer to the nearest second — far
+  // too coarse for a WPM figure. performance.now() is monotonic, so it cannot be
+  // skewed by a clock adjustment mid-word.
+  const revealedAtRef = useRef<number | null>(null);
 
   const clearTimer = () => {
     if (timerRef.current !== null) {
@@ -90,10 +97,14 @@ export function useGameEngine(): GameEngineApi {
       setState((s) => ({ ...s, status: "finished", currentWord: null }));
       return;
     }
+    revealedAtRef.current = performance.now();
     setState((s) => ({
       ...s,
       status: "playing",
       currentWord: next,
+      // Cleared on reveal so the previous word's timing can never bleed into
+      // the next word's feedback line.
+      lastResponseMs: null,
       // Practice mode holds timeLeft at 0 rather than freezing it at the round
       // length. That's deliberate on two counts: nothing renders a countdown in
       // untimed mode anyway, and submitGuess's time bonus is `10 + timeLeft`, so
@@ -133,6 +144,11 @@ export function useGameEngine(): GameEngineApi {
 
   const submitGuess = useCallback(
     (guess: string) => {
+      // Read the clock BEFORE the state updater, which React may call later or
+      // more than once — measuring inside it would time the render, not the answer.
+      const startedAt = revealedAtRef.current;
+      const elapsedMs = startedAt === null ? null : Math.round(performance.now() - startedAt);
+
       setState((s) => {
         if (s.status !== "playing" || !s.currentWord) return s;
         const correct = checkAnswer(s.currentWord, guess);
@@ -144,14 +160,17 @@ export function useGameEngine(): GameEngineApi {
           score: s.score + points,
           streak,
           bestStreak: Math.max(s.bestStreak, streak),
+          lastResponseMs: elapsedMs,
         };
       });
     },
     []
   );
 
+  // Skipping submits nothing, so there is no response time to report — null,
+  // not 0, which would read as an impossibly fast answer.
   const skipWord = useCallback(() => {
-    setState((s) => ({ ...s, status: "incorrect", streak: 0 }));
+    setState((s) => ({ ...s, status: "incorrect", streak: 0, lastResponseMs: null }));
   }, []);
 
   // Countdown timer while a round is active. Practice mode never starts one, so
@@ -163,7 +182,8 @@ export function useGameEngine(): GameEngineApi {
       setState((s) => {
         if (s.status !== "playing") return s;
         if (s.timeLeft <= 1) {
-          return { ...s, status: "incorrect", timeLeft: 0, streak: 0 };
+          // A timeout answered nothing, so it reports no response time.
+          return { ...s, status: "incorrect", timeLeft: 0, streak: 0, lastResponseMs: null };
         }
         return { ...s, timeLeft: s.timeLeft - 1 };
       });

@@ -61,6 +61,19 @@ Deploys via `.github/workflows/deploy.yml` on every push to `main`
     `repeatWord` replaced the old unused `speakWord`; don't reintroduce it.
   The on-screen `.lead-in` line is NOT cleared or re-rolled by a replay — it
   still describes the announcement that introduced this word.
+- All sound effects go through `src/lib/sfx.ts` — never construct an
+  `AudioContext`, oscillator or `<audio>` element anywhere else. Exactly the
+  rule `tts.ts` holds for speech, for the same reason: one file owns the
+  device, so muting, volume and the autoplay-policy dance have a single
+  implementation. Everything is synthesized from oscillators and gain
+  envelopes; there are no audio files in this project and adding one would
+  bring hosting, decoding, a loading state and a licence for three short UI
+  sounds. WHEN a chime fires is `useSfxForOutcome`'s job (one hook, both
+  screens, keyed so a re-render never replays it); HOW it sounds is sfx.ts's.
+  Its settings are deliberately independent of the voice settings — separate
+  toggle, separate volume, separate `spellingbee:sfx:*` keys — because
+  narration and UI feedback are different preferences and neither reads the
+  other's value.
 - No component may assume there is exactly one player in a way that's hard
   to reverse later (e.g. hardcoded "your score" logic that can't extend to
   multiple players' scores once multiplayer exists).
@@ -73,52 +86,32 @@ Deploys via `.github/workflows/deploy.yml` on every push to `main`
   only an explicit toggle writes, so a player who never touches it keeps
   tracking their system setting.
 
-## Core types (do not change without updating this file)
-```ts
-// Eight tiers since Session 15, ordered easiest to hardest. TIER_ORDER in
-// types.ts is the single source of the ordering — never hardcode a tier list
-// beside it, and use TIER_META/TIERS in src/lib/tiers.ts for labels.
-type DifficultyTier =
-  | "novice" | "easy" | "building" | "medium"
-  | "advanced" | "hard" | "expert" | "master";
+## Core types
 
-interface WordEntry {
-  id: string;
-  word: string;
-  tier: DifficultyTier;
-  definition: string;
-  partOfSpeech?: string;
-}
+`DifficultyTier`, `WordEntry`, `RoundStatus`, `GameState`, `GameOptions` and
+`GameEngineApi` all live in `src/types.ts` — read it there rather than from a
+copy here that can drift. What that file cannot tell you:
 
-type RoundStatus = "idle" | "playing" | "correct" | "incorrect" | "finished";
+`GameState.lastResponseMs` (Session 23) is the SECOND deliberate extension of
+the Session 6 contract, following Session 13's `untimed`/`hideDefinition`
+precedent exactly: additive, and defaulting to a value that means "not
+applicable", so an engine that cannot supply it leaves every screen behaving as
+it did before the field existed. It is how long the player took on the word that
+just resolved, and it drives the "2.1s, 61 WPM" tail on the correct-feedback
+line.
 
-interface GameState {
-  tier: DifficultyTier | null;
-  status: RoundStatus;
-  currentWord: WordEntry | null;
-  score: number;
-  streak: number;
-  bestStreak: number;
-  timeLeft: number;
-  wordsRemaining: number;
-  untimed: boolean;         // Session 13
-  hideDefinition: boolean;  // Session 13
-}
-
-// Session 13. Optional and additive: omitting it is exactly the old behaviour.
-interface GameOptions {
-  untimed?: boolean;
-  hideDefinition?: boolean;
-}
-
-interface GameEngineApi {
-  state: GameState;
-  startGame: (tier: DifficultyTier, options?: GameOptions) => void;
-  submitGuess: (guess: string) => void;
-  skipWord: () => void;
-  resetToMenu: () => void;
-}
-```
+- `null` is a real state, not a placeholder for zero. It covers a timeout, a
+  skip, a fresh round, and any mode that has no honest number. Nothing
+  fabricates a duration — a screen given null renders exactly the old text.
+- Every value is SERVER-measured in multiplayer: race reads `response_time_ms`
+  out of submit-answer's payload, elimination reads it off the resolved
+  `round_results` row (submit-turn does not return it, so the fast path from
+  Session 22 reports null until the row lands rather than timing the client).
+  Singleplayer measures with `performance.now()` from reveal to submit —
+  deliberately not from `timeLeft`, which moves in whole seconds and would
+  quantise every WPM figure.
+- WPM uses the standard single-word convention, `(length / 5) / (seconds / 60)`,
+  in `src/lib/wpm.ts` — one implementation, so the two screens cannot drift.
 
 `untimed` and `hideDefinition` describe how the CURRENT game is being played,
 not a stored preference — they're picked per run on the difficulty screen and
@@ -135,7 +128,7 @@ The multiplayer backend schema is live and verified (Sessions 7 / 7b). A real
 Supabase project holds the `words`, `rooms`, `room_players`, and
 `round_results` tables with RLS enforced; the migrations live in `supabase/`
 and were applied via `supabase db push`. Verified against the live project:
-anonymous sign-in works, `words` is seeded with all 120 words (30 per tier),
+anonymous sign-in works, `words` is seeded from the word bank (see below),
 and the write-protection policies hold — clients cannot directly change
 `rooms.status` or `room_players.score`, and `get_room_by_code()` leaks no
 `host_id`.
@@ -323,51 +316,10 @@ Rules this scheme must keep:
   container was rejected: it would hide the hardest tiers behind a scrollbar
   inside a page that already scrolls.
 
-The **word bank is ~1200 words, 150 per tier** (Session 16). The Session 15
-placeholders are gone. Sourcing, licensing and the definition rule live in
-`supabase/WORDLIST_SOURCES.md` — read that before touching word content.
-
-- Words come from **SCOWL** via the MIT `wordlist-english` package, whose "size"
-  buckets are a rarity grading. **Definitions are not from any dictionary** —
-  every one is written fresh for this project, one sentence, no trailing full
-  stop, never using the word inside its own definition. That rule is not
-  negotiable and applies to every word added from here on.
-- The bank is **split one file per tier** under `src/data/words/`, behind
-  `src/data/words/index.ts`. Nothing outside that directory imports a tier file:
-  `wordsForTier` is still the only accessor, so the split is invisible upstream.
-- id prefixes: novice `n`, easy `e`, building `b`, medium `m`, advanced `a`,
-  hard `h`, expert `x`, master `z`. Unique across the whole bank.
-- The original 120 hand-curated words keep their exact ids, words, definitions
-  and tiers (`e1`-`e30`, `m1`-`m30`, `h1`-`h30`, `x1`-`x30`). They are anchors —
-  `rebalance_tiers.mjs` will not move them.
-- Pipeline: `scripts/build_candidates.mjs` (pool from SCOWL) → hand-authored
-  definitions → `scripts/rebalance_tiers.mjs` (swap between ADJACENT tiers until
-  mean rarity rises strictly) → `scripts/verify_words.mjs` (uniqueness, prefixes,
-  counts, gradient) → `supabase/scripts/gen_seed.mjs` (regenerate the seed).
-  Run `verify_words.mjs` after ANY word change; it is the gate.
-- Mean **rarity** must rise strictly across tiers and is enforced. Mean **length**
-  is reported but deliberately not enforced: a short obscure word (`nadir`,
-  `ennui`, `cabal`) is still hard, and forcing length monotonic would push
-  exactly those out of the top tiers.
-- `WORDS_PER_GAME` (=30) in `useGameEngine.ts` caps a singleplayer game. Added in
-  Session 16 because 150 words per tier would otherwise have made a game five
-  times longer — the extra words deepen the POOL, they don't lengthen the game.
-  The multiplayer counterpart is `public.rounds_per_game()` (=10); the two are
-  independent by design.
-
-**Migration debt from Session 15 is resolved.** `0011_reseed_words.sql` is the
-canonical, generated seed and supersedes the word rows in 0003 and 0010. Those
-two are left in place because they are already applied remotely and rewriting an
-applied migration would diverge local and remote history. Regenerate 0011 — never
-hand-edit it — with:
-
-```
-node supabase/scripts/gen_seed.mjs supabase/migrations/0011_reseed_words.sql
-```
-
-It is a pure upsert with no deletes, because `round_results.word_id` has a
-foreign key onto `words.id`; deletes aren't needed anyway since the id space is a
-superset of everything 0003 and 0010 inserted.
+The **word bank is ~1200 words, 150 per tier** (Session 16). Its sourcing, id
+prefixes, definition rule and verify gate live in `src/data/words/CLAUDE.md`,
+and the generated seed migration in `supabase/CLAUDE.md` — both load when you
+work in those directories. Read them before touching word content.
 
 A **draining timer bar** sits under the guess input (Session 17). It is shared
 by both modes for free, because both render `RoundScreen`.
@@ -661,14 +613,39 @@ Rules this session must keep:
   and no existing token carries it. Added to all three palette blocks (dark, and
   both light) in the same edit, per the colour rule.
 
+**The timer bar was one tick behind the numeral, and is now exact** (Session 23).
+
+- Root cause, and it was NOT the span capture or the keyed reset: `.timer-fill`
+  drains via `transition: width 1s linear` while the engines tick in whole
+  seconds. Setting the width to `timeLeft / span` meant the bar only STARTED
+  moving toward N/span when the numeral changed to N, arriving there as the
+  numeral became N-1. At 16s the bar read 93.8% when the numeral already said
+  14/16 = 87.5%, and it reached empty at t=17s while the numeral hit 0 at t=16s
+  — which is why it looked synced to the next word (singleplayer's feedback
+  delay is 1100ms, so the next word arrived ~100ms after the bar finally
+  emptied).
+- The fix aims one step AHEAD: the width target is `(timeLeft - 1) / span`, so
+  during the second the numeral reads N the bar travels from N/span to
+  (N-1)/span. The transition's 1s duration is exactly the tick interval, so the
+  bar now arrives at each value as the numeral displays it and empties exactly
+  as the numeral reaches 0.
+- This keeps Session 17's rule: still a pure function of `timeLeft`, still no
+  second clock, still no round-length constant. The one addition is a PRIMING
+  frame — a fresh element (remounted by `key={wordId}`) has no width to
+  transition from, so it mounts at the true current value and is re-pointed at
+  the look-ahead value one frame later. Without that the bar would silently skip
+  its first second of travel.
+- Urgency classes deliberately still read the DISPLAYED `timeLeft`, not the
+  look-ahead width, so the bar turns red when the player is actually at 20% of
+  their time rather than a second early.
+- A CSS `animation` would have been the obvious alternative and is WRONG here:
+  the global reduce-motion block collapses `animation-duration`, which would
+  empty the bar instantly and destroy the information. A `transition` degrades
+  to a once-a-second step instead, which is the Session 12 guarantee.
+
 ## Naming note
 Local dev folder/npm package name may still say "spelling-race" from
 initial scaffolding — that's cosmetic and doesn't need to match the repo
 name. The GitHub repo and deployed URL are "spellingbee". Use
 "spellingbee" as the prefix for any localStorage keys going forward
 (e.g. "spellingbee:best:easy"), not "spelling-race".
-
-## Commands
-- `npm run dev` — local dev server
-- `npm run build` — production build (also runs `tsc -b`, must pass clean)
-- Push to `main` — auto-deploys via GitHub Actions, no manual deploy step

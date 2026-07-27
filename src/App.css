@@ -1330,6 +1330,15 @@
 
 .turn-screen .guess-input:disabled { opacity: 0.7; }
 
+/* The "2.1s, 61 WPM" tail on a correct answer. Lighter than the "Correct!" it
+   extends, because it is detail rather than the verdict — and it is part of the
+   same <p>, not a second feedback element. */
+.feedback-detail {
+  font-weight: 400;
+  font-size: 0.85em;
+  opacity: 0.8;
+}
+
 .spin { animation: spin 0.9s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 

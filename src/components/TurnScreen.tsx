@@ -3,7 +3,10 @@ import { ArrowLeft, Eye, Ghost, Heart, Loader2, Volume2 } from "lucide-react";
 import type { GameState } from "../types";
 import type { MultiplayerExtras } from "../hooks/useMultiplayerGame";
 import { repeatWord, stopSpeaking } from "../lib/tts";
+import { playSubmit } from "../lib/sfx";
+import { formatResponseDetail } from "../lib/wpm";
 import { useAnnouncedWord } from "../hooks/useAnnouncedWord";
+import { useSfxForOutcome } from "../hooks/useSfxForOutcome";
 import { AvatarBadge } from "./AvatarPicker";
 import { TimerBar } from "./TimerBar";
 
@@ -189,6 +192,17 @@ export function TurnScreen({
     .filter((p) => p.turn_order !== null)
     .sort((a, b) => (a.turn_order ?? 0) - (b.turn_order ?? 0));
 
+  // Keyed on the RESOLVED turn, not the current word: in elimination the next
+  // turn's word is already on screen while the previous turn's outcome shows, so
+  // keying on the displayed word would mis-attribute the chime.
+  //
+  // Must sit ABOVE the `if (knockout)` early return below — a hook after a
+  // conditional return changes hook order between renders.
+  useSfxForOutcome(
+    lastResolvedTurn ? `turn-${lastResolvedTurn.roundNum}` : undefined,
+    state.status
+  );
+
   const holder = players.find((p) => p.player_id === currentTurnPlayerId) ?? null;
   const holderName = holder
     ? holder.player_id === currentUserId
@@ -224,6 +238,13 @@ export function TurnScreen({
 
   const feedback =
     turnOutcome === "correct" ? "correct" : turnOutcome ? "incorrect" : null;
+
+  // Only the player whose turn resolved gets the timing detail — it is their
+  // answer. Watchers see the plain outcome line.
+  const responseDetail =
+    lastResolvedTurn?.playerId === currentUserId
+      ? formatResponseDetail(lastResolvedTurn?.word, lastResolvedTurn?.responseMs)
+      : null;
 
   return (
     <div className="turn-screen">
@@ -315,6 +336,8 @@ export function TurnScreen({
         <form
           onSubmit={(e) => {
             e.preventDefault();
+            if (submitting) return;
+            playSubmit();
             onSubmit(guess);
           }}
         >
@@ -375,7 +398,12 @@ export function TurnScreen({
           "Missed — the word was X" reads straight into the token that just lost
           a heart. */}
       <div className="turn-feedback" aria-live="polite">
-        {feedback === "correct" && <p className="feedback correct">{OUTCOME_LABEL.correct}!</p>}
+        {feedback === "correct" && (
+          <p className="feedback correct">
+            {OUTCOME_LABEL.correct}!
+            {responseDetail && <span className="feedback-detail"> — {responseDetail}</span>}
+          </p>
+        )}
         {feedback === "incorrect" && (
           <p className="feedback incorrect">
             {OUTCOME_LABEL[turnOutcome ?? "wrong"]}

@@ -56,6 +56,24 @@ export interface GameState {
   untimed: boolean;
   /** Spell from audio alone — RoundScreen renders no definition text. */
   hideDefinition: boolean;
+  // --- Session 23 addition --------------------------------------------------
+  /**
+   * How long the player took to answer the word that was JUST resolved, in
+   * milliseconds — measured from the moment the word was revealed to the moment
+   * the answer was submitted. Drives the "2.1s, 61 WPM" detail on the correct
+   * feedback line.
+   *
+   * `null` means "no honest number for this resolution", and that is a real
+   * state rather than a placeholder for zero: it covers a word that timed out
+   * or was skipped (nothing was submitted), a fresh round before any answer,
+   * and any engine that cannot source the value. Nothing fabricates a duration
+   * — a screen given null simply renders the feedback line as it did before.
+   *
+   * Follows the Session 13 precedent exactly: additive, defaults to a value
+   * meaning "not applicable", so an engine that can't supply it keeps every
+   * screen behaving as it did before the field existed.
+   */
+  lastResponseMs: number | null;
 }
 
 /**

@@ -15,6 +15,15 @@ import {
   speakSample,
 } from "../lib/tts";
 import {
+  DEFAULT_SFX_ENABLED,
+  DEFAULT_SFX_VOLUME,
+  getEnabled as getSfxOn,
+  getVolume as getSfxVol,
+  playPreview,
+  setEnabled as setSfxOn,
+  setVolume as setSfxVol,
+} from "../lib/sfx";
+import {
   applyTheme,
   getStoredTheme,
   onSystemThemeChange,
@@ -23,7 +32,13 @@ import {
   type Theme,
 } from "../lib/theme";
 import { isReduceMotionOn, setReduceMotionPreference } from "../lib/motion";
-import { getDisplayName, resetBests, setDisplayName } from "../lib/storage";
+import {
+  getDisplayName,
+  resetBests,
+  setDisplayName,
+  setSfxEnabled as persistSfxEnabled,
+  setSfxVolume as persistSfxVolume,
+} from "../lib/storage";
 
 // The one place for genuinely global, cross-cutting preferences. It absorbed
 // Session 11's standalone VoiceSettings and Session 12's floating ThemeToggle,
@@ -41,6 +56,9 @@ export function SettingsPanel({ onBestsReset }: { onBestsReset?: () => void }) {
   const [rate, setRateState] = useState(DEFAULT_RATE);
   const [volume, setVolumeState] = useState(DEFAULT_VOLUME);
 
+  const [sfxOn, setSfxOnState] = useState(DEFAULT_SFX_ENABLED);
+  const [sfxVolume, setSfxVolumeState] = useState(DEFAULT_SFX_VOLUME);
+
   const [theme, setTheme] = useState<Theme>(() => resolveTheme());
   const [reduceMotion, setReduceMotionState] = useState(() => isReduceMotionOn());
   const [name, setName] = useState(() => getDisplayName());
@@ -54,6 +72,8 @@ export function SettingsPanel({ onBestsReset }: { onBestsReset?: () => void }) {
     setSelectedVoice(getVoiceOverride() ?? "");
     setRateState(getRate());
     setVolumeState(getVolume());
+    setSfxOnState(getSfxOn());
+    setSfxVolumeState(getSfxVol());
   }, []);
 
   // Voices are only needed once the panel is actually opened.
@@ -117,6 +137,23 @@ export function SettingsPanel({ onBestsReset }: { onBestsReset?: () => void }) {
   function changeVolume(next: number) {
     setVolumeState(next);
     setVolume(next);
+  }
+
+  // Both write through to sfx.ts's runtime cache AND to localStorage, the same
+  // shape the voice controls use, so a change takes effect on the very next
+  // sound rather than after a reload.
+  function toggleSfx() {
+    const next = !sfxOn;
+    setSfxOnState(next);
+    setSfxOn(next);
+    persistSfxEnabled(next);
+    if (next) playPreview(); // hear that it came back on
+  }
+
+  function changeSfxVolume(next: number) {
+    setSfxVolumeState(next);
+    setSfxVol(next);
+    persistSfxVolume(next);
   }
 
   function changeName(next: string) {
@@ -260,6 +297,56 @@ export function SettingsPanel({ onBestsReset }: { onBestsReset?: () => void }) {
                   Reset to automatic
                 </button>
               )}
+            </>
+          )}
+        </section>
+
+        {/* Deliberately its own section, not a row inside Voice. Narration and
+            UI feedback are different preferences — someone practising quietly may
+            want the word spoken with no chimes, or chimes with no narration — so
+            these have their own toggle, their own volume and their own
+            "spellingbee:sfx:*" keys. Neither reads the other's value. */}
+        <section className="settings-section">
+          <h3 className="settings-section-title">Sound effects</h3>
+
+          <button
+            className="switch-row"
+            role="switch"
+            aria-checked={sfxOn}
+            onClick={toggleSfx}
+          >
+            <span className="switch-text">
+              <span className="switch-label">Sound effects</span>
+              <span className="switch-hint">
+                Short chimes when you submit and when a word is right or wrong.
+              </span>
+            </span>
+            <span className={`switch-track${sfxOn ? " on" : ""}`} aria-hidden>
+              <span className="switch-thumb" />
+            </span>
+          </button>
+
+          {sfxOn && (
+            <>
+              <label className="field">
+                <span className="field-label">
+                  Effects volume — {Math.round(sfxVolume * 100)}%
+                </span>
+                <input
+                  className="settings-range"
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  value={sfxVolume}
+                  onChange={(e) => changeSfxVolume(Number(e.target.value))}
+                />
+              </label>
+
+              <button className="secondary-btn" onClick={() => playPreview()}>
+                <Play size={14} aria-hidden />
+                Test sound
+              </button>
             </>
           )}
         </section>

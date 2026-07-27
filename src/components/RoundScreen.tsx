@@ -2,7 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, Volume2 } from "lucide-react";
 import type { GameState } from "../types";
 import { repeatWord, stopSpeaking } from "../lib/tts";
+import { playSubmit } from "../lib/sfx";
+import { formatResponseDetail } from "../lib/wpm";
 import { useAnnouncedWord } from "../hooks/useAnnouncedWord";
+import { useSfxForOutcome } from "../hooks/useSfxForOutcome";
 import { ScoreBar } from "./ScoreBar";
 import { TimerBar } from "./TimerBar";
 
@@ -52,6 +55,15 @@ export function RoundScreen({
   // still never speak — see useAnnouncedWord for the full reasoning.
   const leadIn = useAnnouncedWord(wordId, wordText);
 
+  // Sound effects fire off the SAME status transition the feedback text reads,
+  // so what you hear and what you see can never disagree. Keyed on the word id
+  // as well as the status so a re-render never replays a chime, and so two
+  // consecutive words with the same outcome still each get one.
+  //
+  // Must sit ABOVE the `!state.currentWord` early return below — a hook after a
+  // conditional return changes hook order between renders.
+  useSfxForOutcome(wordId, state.status);
+
   const scrollInputIntoView = () => {
     inputRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
   };
@@ -60,6 +72,8 @@ export function RoundScreen({
 
   const feedback =
     state.status === "correct" ? "correct" : state.status === "incorrect" ? "incorrect" : null;
+
+  const responseDetail = formatResponseDetail(state.currentWord?.word, state.lastResponseMs);
 
   function handleExit() {
     // Leaving mid-announcement would otherwise keep the narrator talking over
@@ -128,6 +142,7 @@ export function RoundScreen({
         onSubmit={(e) => {
           e.preventDefault();
           if (state.status !== "playing") return;
+          playSubmit();
           onSubmit(guess);
         }}
       >
@@ -157,7 +172,15 @@ export function RoundScreen({
         <p className="feedback waiting">Answer locked in — waiting for the other players…</p>
       )}
 
-      {!awaitingOthers && feedback === "correct" && <p className="feedback correct">Correct!</p>}
+      {/* Session 23: the response detail EXTENDS this line rather than adding a
+          second feedback element, and it is omitted entirely when there is no
+          measured time (a timeout, a skip, or a mode that can't supply one). */}
+      {!awaitingOthers && feedback === "correct" && (
+        <p className="feedback correct">
+          Correct!
+          {responseDetail && <span className="feedback-detail"> — {responseDetail}</span>}
+        </p>
+      )}
       {!awaitingOthers && feedback === "incorrect" && (
         <p className="feedback incorrect">The word was "{state.currentWord.word}"</p>
       )}

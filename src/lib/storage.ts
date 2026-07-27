@@ -107,6 +107,38 @@ export function setVoiceVolume(volume: number): void {
 // stylesheet already honours. It can only ever add suppression: with this off,
 // a player whose OS asks for reduced motion still gets reduced motion.
 
+// --- sound effects (Session 23) ---------------------------------------------
+// A SEPARATE prefix from "spellingbee:voice:*" on purpose. Narration and UI
+// feedback are different preferences — a player may want the word read aloud
+// with no chimes, or chimes with no narration — so neither reads the other's
+// value and turning one off leaves the other untouched.
+//
+// Both return null when unset so sfx.ts can apply its own defaults rather than
+// this module guessing them, matching how the voice prefs above behave.
+const SFX_ENABLED_KEY = "spellingbee:sfx:enabled";
+const SFX_VOLUME_KEY = "spellingbee:sfx:volume";
+
+export function getSfxEnabled(): boolean | null {
+  const raw = localStorage.getItem(SFX_ENABLED_KEY);
+  if (raw === null) return null;
+  return raw === "true";
+}
+
+export function setSfxEnabled(on: boolean): void {
+  localStorage.setItem(SFX_ENABLED_KEY, String(on));
+}
+
+export function getSfxVolume(): number | null {
+  const raw = localStorage.getItem(SFX_VOLUME_KEY);
+  if (raw === null) return null;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : null;
+}
+
+export function setSfxVolume(volume: number): void {
+  localStorage.setItem(SFX_VOLUME_KEY, String(volume));
+}
+
 const REDUCE_MOTION_KEY = "spellingbee:reduceMotion";
 
 export function getReduceMotion(): boolean {
